@@ -1100,6 +1100,7 @@ export interface JavaModifier
     caught? : boolean;
     uncaught? : boolean;
     declaring? : referenceTypeID;
+    fieldId? : fieldID;
     size? : JdwpStepSize;
     depth? : JdwpStepDepth;
     instance? : objectID;
@@ -1229,6 +1230,7 @@ export interface JavaEvent
     timeout? : bigint;
     timed_out? : boolean;
     exception? : taggedObjectID;
+    catchLocation? : javaLocation;
     refTypeTag? : JdwpTypeTag;
     typeID? : referenceTypeID;
     signature? : string;

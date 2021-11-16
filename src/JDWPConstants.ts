@@ -192,3 +192,4 @@ export enum JdwpType {
     JT_CLASS_LOADER          = parseInt('l'),
     JT_CLASS_OBJECT          = parseInt('c'),
 };
+

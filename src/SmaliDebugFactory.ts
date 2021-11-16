@@ -14,6 +14,5 @@ export class SmaliDebugAdapterDescriptorFactory implements vscode.DebugAdapterDe
     }
 
     public async dispose() {
-		console.log('SmaliDebugAdapterDescriptorFactory.dispose');
 	}
 }

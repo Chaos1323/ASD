@@ -8,8 +8,10 @@ export enum BreakpointStatus
 
 export enum DexInsnType
 {
+    DIT_NONE,
     DIT_NOP,
     DIT_MOVE,
+    DIT_MOVE_RESULT,
     DIT_RETURN,
     DIT_CONST,
     DIT_MONITOR,
@@ -22,8 +24,7 @@ export enum DexInsnType
     DIT_FILL_ARRAY_DATA,
     DIT_THROW,
     DIT_GOTO,
-    DIT_PACKED_SWITCH,
-    DIT_SPARSE_SWITCH,
+    DIT_SWITCH,
     DIT_CMP,
     DIT_IF,
     DIT_UNUSED,
@@ -37,7 +38,10 @@ export enum DexInsnType
     DIT_NEG_NOT,
     DIT_NUMBER_CAST,
     DIT_AOP,
+    DIT_AOP_ADDR,
     DIT_MACOR_REGISTER,
+    DIT_MACOR_PACKED_SWITCH_START,
+    DIT_MACOR_SPARSE_SWITCH_START,
     DIT_MACOR_PACKED_SWITCH_END,
     DIT_MACOR_SPARSE_SWITCH_END,
     DIT_MACOR_LABEL,

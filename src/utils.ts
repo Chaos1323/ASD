@@ -227,3 +227,43 @@ export function formatStringValue(value : string, tag : JdwpType) : javaValue
 		"value" : untaggedValue,
 	};
 }
+
+export function convertStringType(type : string) : JdwpType
+{
+	switch (type[0]) {
+		case '[':
+			return JdwpType.JT_ARRAY;
+		case 'B':
+			return JdwpType.JT_BYTE;
+		case 'C':
+			return JdwpType.JT_CHAR;
+		case 'L':
+			return JdwpType.JT_OBJECT;
+		case 'F':
+			return JdwpType.JT_FLOAT;
+		case 'D':
+			return JdwpType.JT_DOUBLE;
+		case 'I':
+			return JdwpType.JT_INT;
+		case 'J':
+			return JdwpType.JT_LONG;
+		case 'S':
+			return JdwpType.JT_SHORT;
+		case 'Z':
+			return JdwpType.JT_BOOLEAN;
+		case 's':
+			return JdwpType.JT_STRING;
+		case 't':
+			return JdwpType.JT_THREAD;
+		case 'g':
+			return JdwpType.JT_THREAD_GROUP;
+		case 'l':
+			return JdwpType.JT_CLASS_OBJECT;
+		case 'c':
+			return JdwpType.JT_CLASS_OBJECT;
+		default:
+			break;
+	}
+
+	return JdwpType.JT_VOID;
+}

@@ -1,0 +1,151 @@
+{
+	"name": "asd",
+	"displayName": "ASD",
+	"description": "Android Smali bytecode Debugger",
+	"version": "1.0.0",
+	"publisher": "chaos",
+	"author": {
+		"name": "chaos",
+		"email": "chaos.void.beaver@gmail.com"
+	},
+	"engines": {
+		"vscode": "^1.60.0"
+	},
+	"license": "SEE LICENSE IN LICENSE",
+	"bugs": {
+		"url": "https://github.com/Chaos1323/ASD/issues"
+	},
+	"homepage": "https://github.com/Chaos1323/ASD",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/Chaos1323/ASD.git"
+	},
+	"categories": [
+		"Debuggers"
+	],
+	"keywords": [
+		"smali debug",
+		"smali debugger",
+		"android smali debugger"
+	],
+	"icon": "media/asd.png",
+	"activationEvents": [
+		"onLanguage:smali"
+	],
+	"main": "./dist/extension.js",
+	"contributes": {
+		"breakpoints": [
+			{
+				"language": "smali"
+			}
+		],
+		"languages": [
+			{
+				"id": "smali",
+				"extensions": [
+					".smali"
+				],
+				"aliases": [
+					"Smali"
+				],
+				"configuration": "./syntaxes/language-configuration.json"
+			}
+		],
+		"configuration":[
+			{
+				"type": "object",
+				"title": "android smali debug",
+				"properties": {}
+			}
+		],
+		"debuggers": [
+			{
+				"type": "ASD",
+				"label": "android smali debug",
+				"program": "./dist/debugAdapter.js",
+				"runtime": "node",
+				"languages": [
+					"smali"
+				],
+				"configurationAttributes": {
+					"launch": {
+						"required": [
+							"packageName",
+							"mainActivity",
+							"deviceId",
+							"workDir"
+						],
+						"properties": {
+							"packageName": {
+								"type": "string",
+								"description": "Apk package name",
+								"default": ""
+							},
+							"mainActivity": {
+								"type": "string",
+								"description": "launch main activity",
+								"default": "MainActivity"
+							},
+							"deviceId": {
+								"type": "string",
+								"description": "Android phone device",
+								"default": ""
+							},
+							"workDir": {
+								"type": "string",
+								"description": "code root path",
+								"default": "${workspaceFolder}"
+							}
+						}
+					}
+				},
+				"configurationSnippets": [
+					{
+						"label": "Android Smali Launch",
+						"description": "Launch android app for debugging",
+						"body": {
+							"type": "smali",
+							"request": "launch",
+							"name": "${1:Smali Launch}",
+							"packageName": "com.xxx.xxx",
+							"mainActivity": "com.xxx.xxx.MainActivity",
+							"deviceId": "select from the result of 'adb devices'",
+							"workDir": "^\"\\${workspaceFolder}\""
+						}
+					}
+				]
+			}
+		]
+	},
+	"scripts": {
+		"vscode:prepublish": "npm run package",
+		"compile": "webpack",
+		"watch": "webpack --watch",
+		"package": "webpack --mode production --devtool hidden-source-map",
+		"test-compile": "tsc -p ./",
+		"test-watch": "tsc -watch -p ./",
+		"pretest": "npm run test-compile && npm run lint",
+		"lint": "eslint src --ext ts",
+		"test": "node ./out/test/runTest.js"
+	},
+	"dependencies": {
+		"vscode-debugadapter": "^1.49.0"
+	},
+	"devDependencies": {
+		"@types/vscode": "^1.60.0",
+		"@types/glob": "^7.1.3",
+		"@types/mocha": "^8.2.2",
+		"@types/node": "14.x",
+		"eslint": "^7.27.0",
+		"@typescript-eslint/eslint-plugin": "^4.26.0",
+		"@typescript-eslint/parser": "^4.26.0",
+		"glob": "^7.1.7",
+		"mocha": "^8.4.0",
+		"typescript": "^4.3.2",
+		"vscode-debugadapter-testsupport": "^1.49.0",
+		"vscode-test": "^1.5.2",
+		"ts-loader": "^9.2.2",
+		"webpack": "^5.38.1",
+		"webpack-cli": "^4.7.0"
+	}
+}

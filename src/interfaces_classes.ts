@@ -69,6 +69,13 @@ export interface SmaliLineInfo
     offset : bigint;
 }
 
+export interface SmaliLocalReg
+{
+    slot : number;
+    name : string;
+    type : string;
+}
+
 export class MethodInfo
 {
     public signature : string;

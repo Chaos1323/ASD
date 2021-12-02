@@ -18,7 +18,6 @@ import {
 	Thread,
 	Breakpoint,
 	Variable,
-	DebugSession
 } from 'vscode-debugadapter';
 import { DebugProtocol } from 'vscode-debugprotocol';
 import { JDWPClient } from './JDWPClient';
@@ -44,9 +43,9 @@ export class ASDebugSession extends LoggingDebugSession
 	private logCategory : Logger.LogLevel = Logger.LogLevel.Error;
 	private threadHandles : Handles<threadID>;
 	private threadInfos : Thread[];
-	private allclasses_signature : {[key : string] : ClassInfo};
-    private allcalsses_id : Map<referenceTypeID, ClassInfo>;
-	private breakpoints : {[key : string] : DebugBreakPoint[]};
+	private allclasses_signature : { [key: string]: ClassInfo };
+	private allcalsses_id : Map<referenceTypeID, ClassInfo>;
+	private breakpoints : { [key: string]: DebugBreakPoint[] };
 	private frameMgr : ThreadFrameManager;
 
 	public constructor()
@@ -59,15 +58,116 @@ export class ASDebugSession extends LoggingDebugSession
 		this.threadHandles = new Handles<threadID>();
 		this.threadInfos = [];
 		this.allclasses_signature = {};
-        this.allcalsses_id = new Map();
+		this.allcalsses_id = new Map();
 		this.breakpoints = {};
 
 		this.client.on("javaEvent", e => this.handleJavaEvent(e));
 	}
 
+	private getThreadVSId(thread : threadID) : number
+	{
+		for (let i = 0; i < this.threadInfos.length; i++)
+		{
+			let thd : threadID | undefined = this.threadHandles.get(this.threadInfos[i].id);
+			if (thd == thread)
+			{
+				return this.threadInfos[i].id;
+			}
+		}
+
+		//create first
+		let vsid : number = this.threadHandles.create(thread);
+		let tmpthd : Thread = new Thread(vsid, "name-getting");
+		this.threadInfos.push(tmpthd);
+
+		//set name
+		this.client.TR_Name({
+			"thread" : thread,
+		}).then((reply) => {
+			if (reply) {
+				tmpthd.name = reply.threadName;
+			}
+		}).catch((error) => {
+			logError("getThreadVSId", "get thread name failed.");
+		});
+
+		return vsid;
+	}
+
 	protected handleJavaEvent(events : JavaEvent[]) : void
 	{
-		//
+		for (let i = 0; i < events.length; i++)
+		{
+			let thread : threadID | undefined = events[i].thread;
+			switch (events[i].eventKind)
+			{
+				case JdwpEventKind.EK_SINGLE_STEP:
+					if (thread)
+					{
+						this.sendEvent(new StoppedEvent('step', this.getThreadVSId(thread)));
+					}
+					break;
+				case JdwpEventKind.EK_BREAKPOINT:
+					if (thread)
+					{
+						this.sendEvent(new StoppedEvent('breakpoint', this.getThreadVSId(thread)));
+					}
+					break;
+				case JdwpEventKind.EK_THREAD_START:
+					if (thread) {
+						this.sendEvent(new ThreadEvent('started', this.getThreadVSId(thread)));
+					}
+					break;
+				case JdwpEventKind.EK_THREAD_END:
+					if (thread) {
+						this.sendEvent(new ThreadEvent('exited', this.getThreadVSId(thread)));
+					}
+					break;
+				case JdwpEventKind.EK_CLASS_PREPARE:
+					let signature : string | undefined = events[i].signature;
+					let tag : JdwpTypeTag | undefined = events[i].refTypeTag;
+					let refTypeId : referenceTypeID | undefined = events[i].typeID;
+					let status : number | undefined = events[i].status;
+					if (signature && tag && refTypeId && status)
+					{
+						let cls : ClassInfo = new ClassInfo(signature,
+							tag, refTypeId, status);
+						this.allclasses_signature[signature] = cls;
+						this.allcalsses_id.set(refTypeId, cls);
+
+						//add breakpoints
+						let bps: DebugBreakPoint[] = this.breakpoints[signature];
+						for (let i = 0; bps && i < bps.length; i++) {
+							this.addSingleBreakPoint(cls, bps[i]).then((bp) => {
+								this.sendEvent(new BreakpointEvent('changed', bp))
+							});
+						}
+					}
+					break;
+				case JdwpEventKind.EK_METHOD_ENTRY:
+					if (thread)
+					{
+						this.sendEvent(new StoppedEvent('method enter', this.getThreadVSId(thread)));
+					}
+					break;
+				case JdwpEventKind.EK_METHOD_EXIT:
+					if (thread)
+					{
+						this.sendEvent(new StoppedEvent('method exit', this.getThreadVSId(thread)));
+					}
+					break;
+				case JdwpEventKind.EK_VM_DEATH:
+					this.sendEvent(new TerminatedEvent(false));
+					break;
+				case JdwpEventKind.EK_VM_DISCONNECTED:
+					this.sendEvent(new TerminatedEvent(false));
+					break;
+				case JdwpEventKind.EK_CLASS_UNLOAD:
+					break;
+				default:
+					break;
+			}
+		}
 	}
 
 	public errorResponse(response: DebugProtocol.Response, message: string) {
@@ -204,6 +304,37 @@ export class ASDebugSession extends LoggingDebugSession
 
 				//get capabilities
 				await this.client.VM_CapabilitiesNew();
+
+				//set default event
+				await this.client.ER_Set({
+					"eventKind" : JdwpEventKind.EK_CLASS_PREPARE,
+					"suspendPolicy" : JdwpSuspendPolicy.SP_NONE,
+					"modifiers" : [],
+				});
+
+				await this.client.ER_Set({
+					"eventKind" : JdwpEventKind.EK_THREAD_START,
+					"suspendPolicy" : JdwpSuspendPolicy.SP_NONE,
+					"modifiers" : [],
+				});
+
+				await this.client.ER_Set({
+					"eventKind" : JdwpEventKind.EK_THREAD_END,
+					"suspendPolicy" : JdwpSuspendPolicy.SP_NONE,
+					"modifiers" : [],
+				});
+
+				await this.client.ER_Set({
+					"eventKind" : JdwpEventKind.EK_VM_DEATH,
+					"suspendPolicy" : JdwpSuspendPolicy.SP_NONE,
+					"modifiers" : [],
+				});
+
+				await this.client.ER_Set({
+					"eventKind" : JdwpEventKind.EK_VM_DISCONNECTED,
+					"suspendPolicy" : JdwpSuspendPolicy.SP_NONE,
+					"modifiers" : [],
+				});
 
 				//get all classes
 				let classes : VM_AllClassesWithGenericReply | undefined = await this.client.VM_AllClassesWithGeneric();
@@ -363,7 +494,7 @@ export class ASDebugSession extends LoggingDebugSession
 		}
 
 		let cls : ClassInfo | undefined = this.allclasses_signature[clsName];
-		let curBps : DebugBreakPoint[] = this.breakpoints[file];
+		let curBps : DebugBreakPoint[] = this.breakpoints[clsName];
 		if (cls && curBps)
 		{
 			for (let i = 0; i < curBps.length; i++) {
@@ -429,7 +560,7 @@ export class ASDebugSession extends LoggingDebugSession
 
 		if (!curBps)
 		{
-			this.breakpoints[file] = addBps;
+			this.breakpoints[clsName] = addBps;
 		}
 		
 		response.body = { breakpoints };
@@ -821,6 +952,97 @@ export class ASDebugSession extends LoggingDebugSession
 		return undefined
 	}
 
+	protected getLocalVariableValue_OneByOne(variable : DebugVariable) : string | undefined
+	{
+		//local variable
+		if (!variable.frame || !variable.thread)
+		{
+			return "variable's frame or thread is undefined.";
+		}
+
+		if (!variable.children)
+		{
+			return undefined;
+		}
+
+		for (let i = 0; i < variable.children.length; i++)
+		{
+			let child : DebugVariable = variable.children[i];
+			if (!child.slot)
+			{
+				return `local variable ${variable.children[i].name} slot undefined. `;
+			}
+
+			let slots: number[] = [];
+			let types: JdwpType[] = [];
+			slots.push(child.slot);
+			types.push(child.type);
+
+			this.client.SF_GetValues({
+				"frame": variable.frame,
+				"thread": variable.thread,
+				"count": variable.children.length,
+				"slots": slots,
+				"sigbytes": types,
+			}).then((reply) => {
+				if (reply) {
+					for (let j = 0; j < reply.slotValues.length; j++) {
+						if (variable.children && variable.children[j]) {
+							let child: DebugVariable = variable.children[j];
+							child.orignalValue = reply.slotValues[j];
+	
+							//if object or array
+							if (JdwpType.JT_ARRAY == child.orignalValue.tag ||
+								JdwpType.JT_OBJECT == child.orignalValue.tag) {
+								//get refid
+								this.client.OR_ReferenceType(
+									{
+										"object": child.orignalValue.value.A ? child.orignalValue.value.A : (child.orignalValue.value.L ? child.orignalValue.value.L : 0),
+									}
+								).then((reply) => {
+									if (reply) {
+										child.refTypeId = reply.typeID;
+										this.client.RT_Signature({
+											"refType": reply.typeID,
+										}).then((reply2) => {
+											if (reply2) {
+												child.realType = reply2.signature;
+											}
+										}).catch((error) => { return `${error}`; });
+									}
+								}).catch((error) => { return `${error}`; });
+	
+								if (JdwpType.JT_ARRAY == child.orignalValue.tag) {
+									child.size = 0;
+									this.client.AR_Length(
+										{
+											"arrayObject": child.orignalValue.value.A ? child.orignalValue.value.A : 0,
+										}
+									).then((reply) => {
+										if (reply) {
+											child.size = reply.arrayLength;
+										}
+									}).catch((error) => { return `${error}`; });
+								}
+							}
+	
+							this.frameMgr.updateDebugVariableValue(child);
+						}
+					}
+				}
+				else
+				{
+					if (variable.children && variable.children[0])
+					{
+						variable.children[0].value = 'geterror';
+					}
+				}
+			}).catch((error) => { return `${error}`; });
+		}
+
+		return undefined
+	}
+
 	protected getArrayVariableValue(size : number, variable : DebugVariable) : string | undefined
 	{
 		if ('bigint' != typeof(variable.realValue) && 
@@ -1007,7 +1229,8 @@ export class ASDebugSession extends LoggingDebugSession
 	{
 		if ("Local" == variable.name)
 		{
-			return this.getLocalVariableValue(variable);
+			return this.getLocalVariableValue_OneByOne(variable);
+			//return this.getLocalVariableValue(variable);
 		}
 		else if (variable.size)
 		{

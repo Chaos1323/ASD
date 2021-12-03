@@ -512,7 +512,7 @@ export class WriteBuffer
 
     private checkLength(len : number) : void
     {
-        if (this.index + len >= this.capacity)
+        if (this.index + len > this.capacity)
         {
             if (!this.expand)
             {

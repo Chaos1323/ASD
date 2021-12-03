@@ -264,6 +264,16 @@ export class ASDebugSession extends LoggingDebugSession
 		const logPath = args.logFile?args.logFile:path.join(os.tmpdir(), 'Smali-debug.log');
 		logger.setup(this.logCategory, logPath);
 
+		//set current project dir
+		this.cwd = args.workDir;
+		if (this.cwd[this.cwd.length - 1] != path.sep) {
+			this.cwd += path.sep;
+		}
+
+		if (-1 != os.type().indexOf("Windows")) {
+			this.cwd = this.cwd[0].toLowerCase() + this.cwd.slice(1);
+		}
+
 		//get the target pid
 		AdbClient.setTargetDevice(args.deviceId);
 		let pid : string = await AdbClient.getProcessIdByName(args.packageName);
@@ -289,6 +299,9 @@ export class ASDebugSession extends LoggingDebugSession
 			async() => {
 				//get version
 				await this.client.VM_Version();
+
+				//suspend vm
+				await this.client.VM_Suspend();
 
 				//get id size 
 				let idSizes : VM_IDSizesReply | undefined = await this.client.VM_IDSizes();
@@ -349,6 +362,9 @@ export class ASDebugSession extends LoggingDebugSession
 					}
 				}
 
+				//resume vm
+				this.client.VM_Resume();
+
 				this.sendEvent(new InitializedEvent());
 				this.sendResponse(response);
 			},
@@ -365,21 +381,22 @@ export class ASDebugSession extends LoggingDebugSession
 	protected configurationDoneRequest(response: DebugProtocol.ConfigurationDoneResponse, args: DebugProtocol.ConfigurationDoneArguments, request?: DebugProtocol.Request): void
 	{
 		log("ConfigurationDoneRequest", args);
+		this.sendResponse(response);
 		log("ConfigurationDoneResponse", response);
 	}
 
-	private getMethodFromName(mthName : string, cls : ClassInfo) : MethodInfo | undefined
+	private async getMethodFromName(mthName : string, cls : ClassInfo) : Promise<MethodInfo | undefined>
 	{
 		//get all methods of the class
 		if (0 == cls.GetMethodSize())
 		{
-			this.client.RT_Methods({
+			let methods : RT_MethodsReply | undefined = await this.client.RT_Methods({
 				"refType": cls.typeID,
-			}).then((methods) => {
-				if (methods) {
-					cls.AddMethods(methods.name, methods.signature, methods.methodId, methods.modBits);
-				}
-			}).catch((error) => logError("getMethodFromName", error));
+			});
+
+			if (methods) {
+				cls.AddMethods(methods.name, methods.signature, methods.methodId, methods.modBits);
+			}
 		}
 
 		//get the method
@@ -392,18 +409,18 @@ export class ASDebugSession extends LoggingDebugSession
 		return mth;
 	}
 
-	private getMethodFromId(id : methodID, cls : ClassInfo) : MethodInfo | undefined
+	private async getMethodFromId(id : methodID, cls : ClassInfo) : Promise<MethodInfo | undefined>
 	{
 		//get all methods of the class
 		if (0 == cls.GetMethodSize())
 		{
-			this.client.RT_Methods({
+			let methods : RT_MethodsReply | undefined = await this.client.RT_Methods({
 				"refType": cls.typeID,
-			}).then((methods) => {
-				if (methods) {
-					cls.AddMethods(methods.name, methods.signature, methods.methodId, methods.modBits);
-				}
-			}).catch((error) => logError("getMethodFromId", error));
+			});
+
+			if (methods) {
+				cls.AddMethods(methods.name, methods.signature, methods.methodId, methods.modBits);
+			}
 		}
 
 		//get the method
@@ -422,7 +439,7 @@ export class ASDebugSession extends LoggingDebugSession
 		if (cls && "" != breakpoint.methodName) {
 			breakpoint.status = BreakpointStatus.BS_SETTING;
 			//get classid and methid
-			let mth : MethodInfo | undefined = this.getMethodFromName(breakpoint.methodName, cls);
+			let mth : MethodInfo | undefined = await this.getMethodFromName(breakpoint.methodName, cls);
 			if (mth) {
 				//set event
 				let modifiers: JavaModifier[] = [];
@@ -460,7 +477,7 @@ export class ASDebugSession extends LoggingDebugSession
 			"id" : breakpoint.line,
 			"verified" : reply?true:false,
 			"line" : breakpoint.line,
-			"source" : new Source(breakpoint.file),
+			"source" : new Source(breakpoint.file.slice(breakpoint.file.lastIndexOf(path.sep) + 1), breakpoint.file),
 		};
 	}
 
@@ -536,7 +553,7 @@ export class ASDebugSession extends LoggingDebugSession
 					}
 
 					this.sendEvent(new BreakpointEvent(reason,
-						new Breakpoint(false, curBps[i].line, 0, new Source(curBps[i].file))));
+						new Breakpoint(false, curBps[i].line, 0, new Source(args.source.name ? args.source.name : file, curBps[i].file))));
 
 					//delete bp for list
 					curBps.splice(i--);
@@ -551,11 +568,11 @@ export class ASDebugSession extends LoggingDebugSession
 			let lineInfo : SmaliLineInfo | undefined = this.smali.getLineInfoByLine(file, addBps[i].line);
 			if (lineInfo)
 			{
-				curBps[i].methodName = lineInfo.mth;
-				curBps[i].offset = lineInfo.offset;
+				addBps[i].methodName = lineInfo.mth;
+				addBps[i].offset = lineInfo.offset;
 			}
 
-			breakpoints.push(await this.addSingleBreakPoint(cls, curBps[i]));
+			breakpoints.push(await this.addSingleBreakPoint(cls, addBps[i]));
 		}
 
 		if (!curBps)
@@ -608,6 +625,7 @@ export class ASDebugSession extends LoggingDebugSession
 			"thread" : thread,
 		}).then(() => {
 			this.sendResponse(response);
+			this.sendEvent(new StoppedEvent('pause', args.threadId));
 		}).catch((error) => this.errorResponse(response, `${error}`));
 		log("PauseResponse", response);
 	}
@@ -746,50 +764,50 @@ export class ASDebugSession extends LoggingDebugSession
 		let startFrame : number = args.startFrame?args.startFrame:0;
 		let length : number = args.levels?args.levels:-1;
 
-		this.client.TR_Frames({
+		let frames : TR_FramesReply | undefined = await this.client.TR_Frames({
 			"thread": thread,
 			"startFrame": startFrame,
 			"length": length,
-		}).then(async (frames) => {
-			if (frames && thread/*eliment compile error*/) {
-				let stackFrames : StackFrame[] = [];
-				for (let i = 0; i < frames.frames; i++) {
-					let cls : ClassInfo | undefined = this.allcalsses_id.get(frames.locations[i].classId);
-					if (!cls)
-					{
-						logError("stackTraceRequest", `cannot get class from classid ${frames.locations[i].classId}.`);
-						continue;
-					}
+		});
 
-					let mth : MethodInfo | undefined = this.getMethodFromId(frames.locations[i].methodId, cls);
-					if (!mth)
-					{
-						continue;
-					}
-
-					//get the line info 
-					let lineInfo : SmaliLineInfo | undefined = this.smali.getLineInfoByOffset(cls.signature, mth.protoType, frames.locations[i].index);
-					let line : number = lineInfo?lineInfo.line:0;
-
-					const uniqueStackFrameId = this.frameMgr.addThreadFrame(args.threadId, {
-						"clsName" : cls.signature,
-						"clsfile" : cls.getSourcePath(this.cwd),
-						"frameId" : frames.frameIds[i],
-						"handleID" : 0,
-						"line" : line,
-						"mthName" : mth.protoType,
-						"offset" : frames.locations[i].index,
-						"thread" : thread,
-					});
-					stackFrames.push(new StackFrame(uniqueStackFrameId, cls.signature + "->" + mth.protoType, 
-						new Source(cls.getSourcePath(this.cwd)), line, 0));
+		if (frames) {
+			let stackFrames : StackFrame[] = [];
+			for (let i = 0; i < frames.frames; i++) {
+				let cls : ClassInfo | undefined = this.allcalsses_id.get(frames.locations[i].classId);
+				if (!cls)
+				{
+					logError("stackTraceRequest", `cannot get class from classid ${frames.locations[i].classId}.`);
+					continue;
 				}
 
-				response.body = { stackFrames, totalFrames: frames.frames };
-				this.sendResponse(response);
-			}
-		}).catch((error) => this.errorResponse(response, `${error}`));
+				let mth : MethodInfo | undefined = await this.getMethodFromId(frames.locations[i].methodId, cls);
+				if (!mth)
+				{
+					continue;
+				}
 
+				//get the line info 
+				let lineInfo : SmaliLineInfo | undefined = this.smali.getLineInfoByOffset(cls.getSourcePath(this.cwd), mth.protoType, frames.locations[i].index);
+				let line : number = lineInfo?lineInfo.line:0;
+
+				const uniqueStackFrameId = this.frameMgr.addThreadFrame(args.threadId, {
+					"clsName" : cls.signature,
+					"clsfile" : cls.getSourcePath(this.cwd),
+					"frameId" : frames.frameIds[i],
+					"handleID" : 0,
+					"line" : line,
+					"mthName" : mth.protoType,
+					"offset" : frames.locations[i].index,
+					"thread" : thread,
+				});
+				stackFrames.push(new StackFrame(uniqueStackFrameId, cls.signature + "->" + mth.protoType, 
+					new Source(cls.getSourcePath(this.cwd)), line, 0));
+			}
+
+			response.body = { stackFrames, totalFrames: frames.frames };
+		}
+
+		this.sendResponse(response);
 		log("StackTraceResponse", response);
 	}
 

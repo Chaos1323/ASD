@@ -1672,7 +1672,7 @@ export class JDWPClient extends EventEmitter
         let req : WriteBuffer = new WriteBuffer(objectIDSize + 4 + 4);
         req.writeThreadId(cmd.thread);
         req.writeUIntBE(cmd.startFrame);
-        req.writeUIntBE(cmd.length);
+        req.writeIntBE(-1);
 
         let response : Buffer = await this.JdwpCommand(req.getDataBuffer(), 11, 6);
         let pkt: ReadBuffer = new ReadBuffer(response);
@@ -1681,7 +1681,8 @@ export class JDWPClient extends EventEmitter
             let frames : number = pkt.readUIntBE();
             let frameIds : frameID[] = [];
             let locations : javaLocation[] = [];
-            for (let i = 0; i < frames; i++)
+            let num : number = frames > cmd.length?cmd.length:frames;
+            for (let i = 0; i < num; i++)
             {
                 frameIds.push(pkt.readFrameId());
                 locations.push(pkt.readLocation());

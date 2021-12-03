@@ -406,8 +406,32 @@ export class SmaliParser
         };
     }
 
-    public getLineInfoByOffset(uri : string, mth : string, offset : bigint) : SmaliLineInfo | undefined
+    public getLineInfoByOffset(uri : string, mthName : string, offset : bigint) : SmaliLineInfo | undefined
     {
+        let mth : MethodDebugInfo | undefined = this.parseSmaliMethod(uri, mthName);
+        let index : number = Number(offset);
+        if (mth)
+        {
+            let line: number = 0;
+            for (let i = 0; i < mth.offsets.length; i++) {
+                if (index == mth.offsets[i]) {
+                    line = i + 1;
+                    break;
+                }
+                else if (index < mth.offsets[i]) {
+                    line = i;
+                    break;
+                }
+            }
+
+            return {
+                "cls" : '',
+                "mth" : mthName,
+                "line" : line + mth.start + 1,
+                "offset" : offset,
+            };
+        }
+
         return undefined;
     }
 
@@ -926,7 +950,7 @@ export class SmaliParser
                                             'move|move-wide|move-object|move-result|' + //mov
                                             'move-result-wide|move-result-object|move-exception|' +  //mov
                                             'return-void|return|return-wide|return-object|' +  //return 
-                                            'const/4|' +  //const
+                                            'const\\/4|' +  //const
                                             'monitor-enter|monitor-exit|' +  //monitor
                                             'array-length|' +  //array length
                                             'throw|' +  //throw
@@ -936,27 +960,27 @@ export class SmaliParser
                                             'long-to-float|long-to-double|float-to-int|float-to-long|' + //cast
                                             'float-to-double|double-to-int|double-to-long|' + //cast
                                             'double-to-float|int-to-byte|int-to-char|int-to-short|' + //cast
-                                            'add-int/2addr|sub-int/2addr|mul-int/2addr|' + //addr
-                                            'div-int/2addr|rem-int/2addr|and-int/2addr|' + //addr
-                                            'or-int/2addr|xor-int/2addr|shl-int/2addr|' + //addr
-                                            'shr-int/2addr|ushr-int/2addr|add-long/2addr|' + //addr
-                                            'sub-long/2addr|mul-long/2addr|div-long/2addr|' + //addr
-                                            'rem-long/2addr|and-long/2addr|or-long/2addr|' + //addr
-                                            'xor-long/2addr|shl-long/2addr|shr-long/2addr|' + //addr
-                                            'ushr-long/2addr|add-float/2addr|sub-float/2addr|' + //addr
-                                            'mul-float/2addr|div-float/2addr|rem-float/2addr|' + //addr
-                                            'add-double/2addr|sub-double/2addr|mul-double/2addr|' + //addr
-                                            'div-double/2addr|rem-double/2addr|' + //addr
-                                            '+return-void-barrier' + //
+                                            'add-int\\/2addr|sub-int\\/2addr|mul-int\\/2addr|' + //addr
+                                            'div-int\\/2addr|rem-int\\/2addr|and-int\\/2addr|' + //addr
+                                            'or-int\\/2addr|xor-int\\/2addr|shl-int\\/2addr|' + //addr
+                                            'shr-int\\/2addr|ushr-int\\/2addr|add-long\\/2addr|' + //addr
+                                            'sub-long\\/2addr|mul-long\\/2addr|div-long\\/2addr|' + //addr
+                                            'rem-long\\/2addr|and-long\\/2addr|or-long\\/2addr|' + //addr
+                                            'xor-long\\/2addr|shl-long\\/2addr|shr-long/2addr|' + //addr
+                                            'ushr-long\\/2addr|add-float\\/2addr|sub-float\\/2addr|' + //addr
+                                            'mul-float\\/2addr|div-float\\/2addr|rem-float\\/2addr|' + //addr
+                                            'add-double\\/2addr|sub-double\\/2addr|mul-double\\/2addr|' + //addr
+                                            'div-double\\/2addr|rem-double\\/2addr|' + //addr
+                                            '\\+return-void-barrier' + //
                                             '\\b.*', 'g');
 
-        let insn2Size: RegExp = new RegExp('^\\s*move/from16|move-wide/from16|move-object/from16|' + //mov
-                                           'const/16|const-wide/high16|const-string|const-class|' +  //const
+        let insn2Size: RegExp = new RegExp('^\\s*move\\/from16|move-wide\\/from16|move-object\\/from16|' + //mov
+                                           'const\\/16|const-wide\\/high16|const-string|const-class|' +  //const
                                            'check-cast|' +  //check-cast
                                            'instance-of|' +  //instance-of
                                            'new-instance|' +  //new-instance
                                            'new-array|' +  //new-array
-                                           'goto/16|' + //jump
+                                           'goto\\/16|' + //jump
                                            'cmpl-float|cmpg-float|cmpl-double|cmpg-double|cmp-long|' + //cmp
                                            'if-eq|if-ne|if-lt|if-ge|if-gt|if-le|' + //if
                                            'if-eqz|if-nez|if-ltz|if-gez|if-gtz|if-lez|' + //if
@@ -972,33 +996,33 @@ export class SmaliParser
                                            'shl-long|shr-long|ushr-long|add-float|sub-float|mul-float|' + //AOP
                                            'div-float|rem-float|add-double|sub-double|mul-double|' + //AOP
                                            'div-double|rem-double|rsub-int|' + //AOP
-                                           'add-int/lit16|mul-int/lit16|div-int/lit16|' + //lit AOP
-                                           'rem-int/lit16|and-int/lit16|or-int/lit16|' + //lit AOP
-                                           'xor-int/lit16|add-int/lit8|rsub-int/lit8|' + //lit AOP
-                                           'mul-int/lit8|div-int/lit8|rem-int/lit8|' + //lit AOP
-                                           'and-int/lit8|or-int/lit8|xor-int/lit8|' + //lit AOP
-                                           'shl-int/lit8|shr-int/lit8|ushr-int/lit8|' + //lit AOP
-                                           '+iget-volatile|+iget-object-volatile|+iget-wide-volatile|' + //+iget
-                                           '+iput-volatile|+iput-object-volatile|+iput-wide-volatile|' + //+iput
-                                           '+sget-volatile|+sget-object-volatile|+sget-wide-volatile|' + //+sget
-                                           '+sput-volatile|+sput-object-volatile|+sput-wide-volatile|' + //+sput
-                                           '^throw-verification-error|' + //throw
-                                           '+iget-quick|+iget-wide-quick|+iget-object-quick|' + //iget quick
-                                           '+iput-quick|+iput-wide-quick|+iput-object-quick' + //iput quic
+                                           'add-int\\/lit16|mul-int\\/lit16|div-int\\/lit16|' + //lit AOP
+                                           'rem-int\\/lit16|and-int\\/lit16|or-int\\/lit16|' + //lit AOP
+                                           'xor-int\\/lit16|add-int\\/lit8|rsub-int\\/lit8|' + //lit AOP
+                                           'mul-int\\/lit8|div-int\\/lit8|rem-int\\/lit8|' + //lit AOP
+                                           'and-int\\/lit8|or-int\\/lit8|xor-int\\/lit8|' + //lit AOP
+                                           'shl-int\\/lit8|shr-int\\/lit8|ushr-int/lit8|' + //lit AOP
+                                           '\\+iget-volatile|\\+iget-object-volatile|\\+iget-wide-volatile|' + //+iget
+                                           '\\+iput-volatile|\\+iput-object-volatile|\\+iput-wide-volatile|' + //+iput
+                                           '\\+sget-volatile|\\+sget-object-volatile|\\+sget-wide-volatile|' + //+sget
+                                           '\\+sput-volatile|\\+sput-object-volatile|\\+sput-wide-volatile|' + //+sput
+                                           '\\^throw-verification-error|' + //throw
+                                           '\\+iget-quick|\\+iget-wide-quick|\\+iget-object-quick|' + //iget quick
+                                           '\\+iput-quick|\\+iput-wide-quick|\\+iput-object-quick' + //iput quic
                                            '\\b.*', 'g');
         
-        let insn3Size: RegExp = new RegExp('^\\s*move/16|move-wide/16|move-object/16|' +  //mov
-                                           'const|const-wide/32|const-string/jumbo|' + //const
+        let insn3Size: RegExp = new RegExp('^\\s*move\\/16|move-wide\\/16|move-object\\/16|' +  //mov
+                                           'const|const-wide\\/32|const-string\\/jumbo|' + //const
                                            'filled-new-array|filled-new-array/range|fill-array-data|' + //fill
-                                           'goto/32|' + //jmp
+                                           'goto\\/32|' + //jmp
                                            'packed-switch|sparse-switch|' + //switch
                                            'invoke-virtual|invoke-super|invoke-direct|invoke-static|' + //invoke
-                                           'invoke-interface|invoke-virtual/range|invoke-super/range|' + //invoke
-                                           'invoke-direct/range|invoke-static/range|invoke-interface/range|' + //invoke
-                                           '+invoke-object-init/range|+invoke-virtual-quick|' + //+inovke
-                                           '+invoke-virtual-quick/range|+invoke-super-quick|' + //+inovke
-                                           '+invoke-super-quick/range|' + //+inovke
-                                           '+execute-inline|+execute-inline/range' + //+execute
+                                           'invoke-interface|invoke-virtual\\/range|invoke-super\\/range|' + //invoke
+                                           'invoke-direct\\/range|invoke-static\\/range|invoke-interface\\/range|' + //invoke
+                                           '\\+invoke-object-init\\/range|\\+invoke-virtual-quick|' + //+inovke
+                                           '\\+invoke-virtual-quick/\\range|\\+invoke-super-quick|' + //+inovke
+                                           '\\+invoke-super-quick/\\range|' + //+inovke
+                                           '\\+execute-inline|\\+execute-inline\\/range' + //+execute
                                            '\\b.*', 'g');
 
         let insn5Size: RegExp = new RegExp('^\\s*const-wide\\b.*', 'g');

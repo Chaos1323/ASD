@@ -12,23 +12,46 @@ Android Smali bytecode Debugger
 ## Requirements
 
  - adb tool should be installed
- - the adb tool path should be added into the system EV
+ - the adb tool path should be added into the system EV,you can check in cmd with `adb version` commandline
+ - use the baksmali to get the apk smali code
 
-## Extension Settings
+## HOW TO
 
-Include if your extension adds any VS Code settings through the `contributes.configuration` extension point.
+1.use the baksmali to generate the apk smali code
 
-For example:
+2.enter the code directory, then execute `code ./` command
 
-This extension contributes the following settings:
+3.in the vscode, open any smali file, then press `F5`
 
-* `myExtension.enable`: enable/disable this extension
-* `myExtension.thing`: set to `blah` to do something
+4.follow the tips to create a launch task json file
 
-## Known Issues
+5.select ASD configure item
 
-Calling out known issues can help limit users opening duplicate issues against your extension.
+6.finally the `launch.json` content should be like this
+    {
+        "version": "0.2.0",
+        "configurations": [
+            {
+                "type": "ASD",
+                "request": "launch",
+                "name": "Smali Launch",
+                "packageName": "xxx.xxxxx",
+                "mainActivity": "xxx.xxxxx.MainActivity",
+                "deviceId": "xxxxxxx",
+                "workDir": "${workspaceFolder}"
+            }
+       ]
+    }
+*
+    * the `packageName` : the apk package name
+    * the `mainActivity` : the apk entry class
+    * the `deviceId` : your device id which getted from the `adb devices` command
 
-## Release Notes
+## TO DO
+ - implement the evaluate function totally
+ - make the array value to display better
+ - add the unit-test suite
 
-Users appreciate release notes as you update your extension.
+## Other
+
+ You can use this debugger extension with other smali language server extension to valid the code browsing.

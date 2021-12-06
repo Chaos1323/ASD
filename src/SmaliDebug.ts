@@ -27,9 +27,10 @@ import { arrayID, fieldID, frameID, frameIDSize, javaUntaggedValue, javaValue, m
 import { JdwpEventKind, JdwpModKind, JdwpStepDepth, JdwpStepSize, JdwpSuspendPolicy, 
 	JdwpType, JdwpTypeTag } from './JDWPConstants';
 import { AR_GetValuesReply, AR_LengthReply, ER_ClearRequest, ER_SetReply, ER_SetRequest, 
-	JavaEvent, JavaModifier, OR_ReferenceTypeReply, RT_FieldsReply, RT_MethodsReply, 
+	JavaEvent, JavaModifier, OR_GetValuesReply, OR_ReferenceTypeReply, RT_FieldsReply, RT_GetValuesReply, RT_MethodsReply, 
+	RT_SignatureReply, 
 	SF_GetValuesReply, TR_FramesReply, TR_NameReply, VM_AllClassesWithGenericReply, 
-	VM_AllThreadsReply, VM_IDSizesReply } from './JDWPProtocol';
+	VM_AllThreadsReply, VM_CreateStringReply, VM_IDSizesReply } from './JDWPProtocol';
 import { AdbClient } from './AdbClient';
 import { BreakpointStatus } from './enums';
 import { ThreadFrameManager } from './threadFrame';
@@ -138,6 +139,7 @@ export class ASDebugSession extends LoggingDebugSession
 						//add breakpoints
 						let bps: DebugBreakPoint[] = this.breakpoints[signature];
 						for (let i = 0; bps && i < bps.length; i++) {
+							//should be suspend????
 							this.addSingleBreakPoint(cls, bps[i]).then((bp) => {
 								this.sendEvent(new BreakpointEvent('changed', bp))
 							});
@@ -672,7 +674,7 @@ export class ASDebugSession extends LoggingDebugSession
 		});
 	}
 
-	protected nextRequest(response: DebugProtocol.NextResponse, args: DebugProtocol.NextArguments, request?: DebugProtocol.Request): void
+	protected async nextRequest(response: DebugProtocol.NextResponse, args: DebugProtocol.NextArguments, request?: DebugProtocol.Request): Promise<void>
 	{
 		log("NextRequest", args);
 		let thread : threadID | undefined = this.threadHandles.get(args.threadId);
@@ -877,7 +879,7 @@ export class ASDebugSession extends LoggingDebugSession
 		log("ScopesResponse", response);
 	}
 
-	protected getLocalVariableValue(variable : DebugVariable) : string | undefined
+	protected async getLocalVariableValue(variable : DebugVariable) : Promise<string | undefined>
 	{
 		//local variable
 		if (!variable.frame || !variable.thread)
@@ -905,72 +907,62 @@ export class ASDebugSession extends LoggingDebugSession
 			types.push(child.type);
 		}
 
-		this.client.SF_GetValues({
+		let reply : SF_GetValuesReply | undefined = await this.client.SF_GetValues({
 			"frame" : variable.frame,
 			"thread" : variable.thread,
 			"count" : variable.children.length,
 			"slots" : slots,
 			"sigbytes" : types,
-		}).then((reply) => {
-			if (!reply)
-			{
-				return `get local variable ${variable.name} failed.`;
-			}
+		});
+		if (!reply) {
+			return `get local variable ${variable.name} failed.`;
+		}
 
-			for (let i = 0; i < reply.slotValues.length; i++) {
-				if (variable.children && variable.children[i]) {
-					let child : DebugVariable = variable.children[i];
-					child.orignalValue = reply.slotValues[i];
+		for (let i = 0; i < reply.slotValues.length; i++) {
+			if (variable.children && variable.children[i]) {
+				let child: DebugVariable = variable.children[i];
+				child.orignalValue = reply.slotValues[i];
 
-					//if object or array
-					if (JdwpType.JT_ARRAY == child.orignalValue.tag || 
-						JdwpType.JT_OBJECT == child.orignalValue.tag) 
-					{
-						//get refid
-						this.client.OR_ReferenceType(
-							{
-								"object" : child.orignalValue.value.A?child.orignalValue.value.A:(child.orignalValue.value.L?child.orignalValue.value.L:0),
-							}
-						).then((reply) => {
-							if (reply)
-							{
-								child.refTypeId = reply.typeID;
-								this.client.RT_Signature({
-									"refType" : reply.typeID,
-								}).then((reply2) => {
-									if (reply2)
-									{
-										child.realType = reply2.signature;
-									}
-								}).catch((error) => {return `${error}`;});
-							}
-						}).catch((error) => {return `${error}`;});
-
-						if (JdwpType.JT_ARRAY == child.orignalValue.tag)
+				//if object or array
+				if (JdwpType.JT_ARRAY == child.orignalValue.tag ||
+					JdwpType.JT_OBJECT == child.orignalValue.tag) {
+					//get refid
+					let reply : OR_ReferenceTypeReply | undefined = await this.client.OR_ReferenceType(
 						{
-							child.size = 0;
-							this.client.AR_Length(
-								{
-									"arrayObject" : child.orignalValue.value.A?child.orignalValue.value.A:0,
-								}
-							).then((reply) => {
-								if (reply)
-								{
-									child.size = reply.arrayLength;
-								}
-							}).catch((error) => {return `${error}`;});
+							"object": child.orignalValue.value.A ? child.orignalValue.value.A : (child.orignalValue.value.L ? child.orignalValue.value.L : 0),
+						}
+					);
+					if (reply) {
+						child.refTypeId = reply.typeID;
+						let reply2 : RT_SignatureReply | undefined = await this.client.RT_Signature({
+							"refType": reply.typeID,
+						});
+						if (reply2) {
+							child.realType = reply2.signature;
 						}
 					}
 
-					this.frameMgr.updateDebugVariableValue(child);
+					if (JdwpType.JT_ARRAY == child.orignalValue.tag) {
+						child.size = 0;
+						let reply : AR_LengthReply | undefined = await this.client.AR_Length(
+							{
+								"arrayObject": child.orignalValue.value.A ? child.orignalValue.value.A : 0,
+							}
+						);
+						if (reply) {
+							child.size = reply.arrayLength;
+						}
+					}
 				}
+
+				this.frameMgr.updateDebugVariableValue(child);
 			}
-		}).catch((error) => {return `${error}`;});
+		}
 
 		return undefined
 	}
 
-	protected getLocalVariableValue_OneByOne(variable : DebugVariable) : string | undefined
+	protected async getLocalVariableValue_OneByOne(variable : DebugVariable) : Promise<string | undefined>
 	{
 		//local variable
 		if (!variable.frame || !variable.thread)
@@ -986,7 +978,7 @@ export class ASDebugSession extends LoggingDebugSession
 		for (let i = 0; i < variable.children.length; i++)
 		{
 			let child : DebugVariable = variable.children[i];
-			if (!child.slot)
+			if (undefined == child.slot)
 			{
 				return `local variable ${variable.children[i].name} slot undefined. `;
 			}
@@ -996,72 +988,63 @@ export class ASDebugSession extends LoggingDebugSession
 			slots.push(child.slot);
 			types.push(child.type);
 
-			this.client.SF_GetValues({
+			let reply : SF_GetValuesReply | undefined = await this.client.SF_GetValues({
 				"frame": variable.frame,
 				"thread": variable.thread,
-				"count": variable.children.length,
+				"count": 1,
 				"slots": slots,
 				"sigbytes": types,
-			}).then((reply) => {
-				if (reply) {
-					for (let j = 0; j < reply.slotValues.length; j++) {
-						if (variable.children && variable.children[j]) {
-							let child: DebugVariable = variable.children[j];
-							child.orignalValue = reply.slotValues[j];
-	
-							//if object or array
-							if (JdwpType.JT_ARRAY == child.orignalValue.tag ||
-								JdwpType.JT_OBJECT == child.orignalValue.tag) {
-								//get refid
-								this.client.OR_ReferenceType(
-									{
-										"object": child.orignalValue.value.A ? child.orignalValue.value.A : (child.orignalValue.value.L ? child.orignalValue.value.L : 0),
-									}
-								).then((reply) => {
-									if (reply) {
-										child.refTypeId = reply.typeID;
-										this.client.RT_Signature({
-											"refType": reply.typeID,
-										}).then((reply2) => {
-											if (reply2) {
-												child.realType = reply2.signature;
-											}
-										}).catch((error) => { return `${error}`; });
-									}
-								}).catch((error) => { return `${error}`; });
-	
-								if (JdwpType.JT_ARRAY == child.orignalValue.tag) {
-									child.size = 0;
-									this.client.AR_Length(
-										{
-											"arrayObject": child.orignalValue.value.A ? child.orignalValue.value.A : 0,
-										}
-									).then((reply) => {
-										if (reply) {
-											child.size = reply.arrayLength;
-										}
-									}).catch((error) => { return `${error}`; });
+			});
+			if (reply) {
+				for (let j = 0; j < reply.slotValues.length; j++) {
+					if (child) {
+						child.orignalValue = reply.slotValues[j];
+
+						//if object or array
+						if (JdwpType.JT_ARRAY == child.orignalValue.tag ||
+							JdwpType.JT_OBJECT == child.orignalValue.tag) {
+							//get refid
+							let reply : OR_ReferenceTypeReply | undefined = await this.client.OR_ReferenceType(
+								{
+									"object": child.orignalValue.value.A ? child.orignalValue.value.A : (child.orignalValue.value.L ? child.orignalValue.value.L : 0),
+								}
+							);
+							if (reply) {
+								child.refTypeId = reply.typeID;
+								let reply2 : RT_SignatureReply | undefined = await this.client.RT_Signature({
+									"refType": reply.typeID,
+								});
+								if (reply2) {
+									child.realType = reply2.signature;
 								}
 							}
-	
-							this.frameMgr.updateDebugVariableValue(child);
+
+							if (JdwpType.JT_ARRAY == child.orignalValue.tag) {
+								child.size = 0;
+								let reply : AR_LengthReply | undefined = await this.client.AR_Length(
+									{
+										"arrayObject": child.orignalValue.value.A ? child.orignalValue.value.A : 0,
+									}
+								);
+								if (reply) {
+									child.size = reply.arrayLength;
+								}
+							}
 						}
+
+						this.frameMgr.updateDebugVariableValue(child);
 					}
 				}
-				else
-				{
-					if (variable.children && variable.children[0])
-					{
-						variable.children[0].value = 'geterror';
-					}
-				}
-			}).catch((error) => { return `${error}`; });
+			}
+			else {
+				child.value = 'get-error';
+			}
 		}
 
 		return undefined
 	}
 
-	protected getArrayVariableValue(size : number, variable : DebugVariable) : string | undefined
+	protected async getArrayVariableValue(size : number, variable : DebugVariable) : Promise<string | undefined>
 	{
 		if ('bigint' != typeof(variable.realValue) && 
 			'number' != typeof(variable.realValue))
@@ -1069,73 +1052,68 @@ export class ASDebugSession extends LoggingDebugSession
 			return "variable's realValue type is unvalid.";
 		}
 
-		this.client.AR_GetValues({
+		let reply : AR_GetValuesReply | undefined = await this.client.AR_GetValues({
 			"arrayObject": variable.realValue,
 			"firstIndex": 0,
 			"length" : size,
-		}).then((reply) => {
-			if (!reply)
-			{
-				return `get Array variable ${variable.name} failed.`;
-			}
+		});
 
-			if (0 == reply.values.primitiveValues?.length &&
-				0 == reply.values.objectValues?.length) {
-				return undefined;
-			}
+		if (!reply) {
+			return `get Array variable ${variable.name} failed.`;
+		}
 
-			variable.children = [];
-			if (isPrimitiveType(reply.values.tag))
-			{
-				for (let i = 0; reply.values.primitiveValues && i < reply.values.primitiveValues.length; i++)
-				{
-					let child : DebugVariable = {
-						"id" : 0,
-						"frameId" : variable.frameId,
-						"realValue" : 0,
-						"refTypeId" : 0,
-						"value" : "",
-						"type" : reply.values.tag,
-						"name" : i.toString(),
-						"parent" : variable,
-						"orignalValue" : {
-							"tag" : reply.values.tag,
-							"value" : reply.values.primitiveValues[i],
-						}
-					};
+		if (0 == reply.values.primitiveValues?.length &&
+			0 == reply.values.objectValues?.length) {
+			return undefined;
+		}
 
-					child.id = this.frameMgr.addFrameVariable(variable.frameId, child);
-					this.frameMgr.updateDebugVariableValue(child);
-					variable.children.push(child);
-				}
-			}
-			else
-			{
-				for (let i = 0; reply.values.objectValues && i < reply.values.objectValues.length; i++)
-				{
-					let child : DebugVariable = {
-						"id" : 0,
-						"frameId" : variable.frameId,
-						"realValue" : 0,
-						"refTypeId" : 0,
-						"value" : "",
-						"type" : reply.values.tag,
-						"name" : i.toString(),
-						"parent" : variable,
-						"orignalValue" : reply.values.objectValues[i],
-					};
+		variable.children = [];
+		if (isPrimitiveType(reply.values.tag)) {
+			for (let i = 0; reply.values.primitiveValues && i < reply.values.primitiveValues.length; i++) {
+				let child: DebugVariable = {
+					"id": 0,
+					"frameId": variable.frameId,
+					"realValue": 0,
+					"refTypeId": 0,
+					"value": "",
+					"type": reply.values.tag,
+					"name": i.toString(),
+					"parent": variable,
+					"orignalValue": {
+						"tag": reply.values.tag,
+						"value": reply.values.primitiveValues[i],
+					}
+				};
 
-					child.id = this.frameMgr.addFrameVariable(variable.frameId, child);
-					this.frameMgr.updateDebugVariableValue(child);
-					variable.children.push(child);
-				}
+				child.id = this.frameMgr.addFrameVariable(variable.frameId, child);
+				this.frameMgr.updateDebugVariableValue(child);
+				variable.children.push(child);
 			}
-		}).catch((error) => {return `${error}`;});
+		}
+		else {
+			for (let i = 0; reply.values.objectValues && i < reply.values.objectValues.length; i++) {
+				let child: DebugVariable = {
+					"id": 0,
+					"frameId": variable.frameId,
+					"realValue": 0,
+					"refTypeId": 0,
+					"value": "",
+					"type": reply.values.tag,
+					"name": i.toString(),
+					"parent": variable,
+					"orignalValue": reply.values.objectValues[i],
+				};
+
+				child.id = this.frameMgr.addFrameVariable(variable.frameId, child);
+				this.frameMgr.updateDebugVariableValue(child);
+				variable.children.push(child);
+			}
+		}
 
 		return undefined;
 	}
 
-	protected getObjectVariableValue(refType : referenceTypeID,  variable : DebugVariable) : string | undefined
+	protected async getObjectVariableValue(refType : referenceTypeID,  variable : DebugVariable) : Promise<string | undefined>
 	{
 		if ('boolean' == typeof(variable.realValue))
 		{
@@ -1145,118 +1123,120 @@ export class ASDebugSession extends LoggingDebugSession
 		//just for compile error
 		let objId : objectID = variable.realValue;
 
-		this.client.RT_Fields({
+		let reply : RT_FieldsReply | undefined = await this.client.RT_Fields({
 			"refType" : variable.refTypeId,
-		}).then((reply) => {
-			if (!reply)
-			{
-				return `get fields of referencetype ${variable.realType} failed.`;
+		});
+		if (!reply) {
+			return `get fields of referencetype ${variable.realType} failed.`;
+		}
+
+		let staticFields: fieldID[] = [];
+		let staticNames: string[] = [];
+		let staticSignatures: string[] = [];
+		let normalFields: fieldID[] = [];
+		let normalNames: string[] = [];
+		let normalSignatures: string[] = [];
+
+		for (let i = 0; i < reply.declared; i++) {
+			if (reply.modBits[i] & 0x0008) {
+				staticFields.push(reply.fieldId[i]);
+				staticNames.push(reply.name[i]);
+				staticSignatures.push(reply.signature[i]);
 			}
-
-			let staticFields : fieldID[] = [];
-			let staticNames : string[] = [];
-			let staticSignatures : string[] = [];
-			let normalFields : fieldID[] = [];
-			let normalNames : string[] = [];
-			let normalSignatures : string[] = [];
-
-			for (let i = 0; i < reply.declared; i++)
-			{
-				if (reply.modBits[i] & 0x0008)
-				{
-					staticFields.push(reply.fieldId[i]);
-					staticNames.push(reply.name[i]);
-					staticSignatures.push(reply.signature[i]);
-				}
-				else
-				{
-					normalFields.push(reply.fieldId[i]);
-					normalNames.push(reply.name[i]);
-					normalSignatures.push(reply.signature[i]);
-				}
+			else {
+				normalFields.push(reply.fieldId[i]);
+				normalNames.push(reply.name[i]);
+				normalSignatures.push(reply.signature[i]);
 			}
+		}
 
-			variable.children = [];
-			this.client.OR_GetValues({
-				"object" : objId,
-				"fieldIds" : normalFields,
-			}).then((reply2) => {
-				if (!reply2) {
-					return `get object fields ${variable.name} failed.`;
-				}
+		if (0 == normalFields.length)
+		{
+			return undefined;
+		}
 
-				for (let i = 0; i < reply2.values.length; i++)
-				{
-					let child : DebugVariable = {
-						"id" : 0,
-						"frameId" : variable.frameId,
-						"realValue" : 0,
-						"refTypeId" : 0,
-						"value" : "",
-						"realType" : normalSignatures[i],
-						"type" : reply2.values[i].tag,
-						"name" : normalNames[i],
-						"parent" : variable,
-						"static" : false,
-						"orignalValue" : reply2.values[i],
-					};
+		variable.children = [];
+		let reply2 : OR_GetValuesReply | undefined = await this.client.OR_GetValues({
+			"object": objId,
+			"fieldIds": normalFields,
+		});
 
-					child.fieldId = normalFields[i];
-					child.id = this.frameMgr.addFrameVariable(variable.frameId, child);
-					this.frameMgr.updateDebugVariableValue(child);
-					variable.children?.push(child);
-				}
-			}).catch((error) => {return `${error}`;});
+		if (!reply2) {
+			return `get object fields ${variable.name} failed.`;
+		}
 
-			this.client.RT_GetValues({
-				"refType" : variable.refTypeId,
-				"fieldIds" : staticFields,
-			}).then((reply3) => {
-				if (!reply3) {
-					return `get object fields ${variable.name} failed.`;
-				}
+		for (let i = 0; i < reply2.values.length; i++) {
+			let child: DebugVariable = {
+				"id": 0,
+				"frameId": variable.frameId,
+				"realValue": 0,
+				"refTypeId": this.allclasses_signature[normalSignatures[i]]?.typeID,
+				"value": "",
+				"realType": normalSignatures[i],
+				"type": reply2.values[i].tag,
+				"name": normalNames[i],
+				"parent": variable,
+				"static": false,
+				"orignalValue": reply2.values[i],
+			};
 
-				for (let i = 0; i < reply3.values.length; i++)
-				{
-					let child : DebugVariable = {
-						"id" : 0,
-						"frameId" : variable.frameId,
-						"realValue" : 0,
-						"refTypeId" : 0,
-						"value" : "",
-						"realType" : staticSignatures[i],
-						"type" : reply3.values[i].tag,
-						"name" : staticNames[i],
-						"parent" : variable,
-						"static" : true,
-						"orignalValue" : reply3.values[i],
-					};
+			child.fieldId = normalFields[i];
+			child.id = this.frameMgr.addFrameVariable(variable.frameId, child);
+			this.frameMgr.updateDebugVariableValue(child);
+			variable.children?.push(child);
+		}
 
-					child.fieldId = staticFields[i];
-					child.id = this.frameMgr.addFrameVariable(variable.frameId, child);
-					this.frameMgr.updateDebugVariableValue(child);
-					variable.children?.push(child);
-				}
-			}).catch((error) => {return `${error}`;});
-		}).catch((error) => {return `${error}`;});
+		if (0 == staticFields.length)
+		{
+			return undefined;
+		}
+
+		let reply3 : RT_GetValuesReply | undefined = await this.client.RT_GetValues({
+			"refType": variable.refTypeId,
+			"fieldIds": staticFields,
+		});
+		if (!reply3) {
+			return `get object fields ${variable.name} failed.`;
+		}
+
+		for (let i = 0; i < reply3.values.length; i++) {
+			let child: DebugVariable = {
+				"id": 0,
+				"frameId": variable.frameId,
+				"realValue": 0,
+				"refTypeId": this.allclasses_signature[staticSignatures[i]]?.typeID,
+				"value": "",
+				"realType": staticSignatures[i],
+				"type": reply3.values[i].tag,
+				"name": staticNames[i],
+				"parent": variable,
+				"static": true,
+				"orignalValue": reply3.values[i],
+			};
+
+			child.fieldId = staticFields[i];
+			child.id = this.frameMgr.addFrameVariable(variable.frameId, child);
+			this.frameMgr.updateDebugVariableValue(child);
+			variable.children?.push(child);
+		}
 
 		return undefined;
 	}
 
-	protected getVariableValue(variable : DebugVariable) : string | undefined
+	protected async getVariableValue(variable : DebugVariable) : Promise<string | undefined>
 	{
 		if ("Local" == variable.name)
 		{
-			return this.getLocalVariableValue_OneByOne(variable);
-			//return this.getLocalVariableValue(variable);
+			return await this.getLocalVariableValue_OneByOne(variable);
+			//return await this.getLocalVariableValue(variable);
 		}
 		else if (variable.size)
 		{
-			return this.getArrayVariableValue(variable.size, variable);
+			return await this.getArrayVariableValue(variable.size, variable);
 		}
 		else if (variable.refTypeId)
 		{
-			return this.getObjectVariableValue(variable.refTypeId, variable);
+			return await this.getObjectVariableValue(variable.refTypeId, variable);
 		}
 
 		return undefined;
@@ -1272,7 +1252,7 @@ export class ASDebugSession extends LoggingDebugSession
 			return;
 		}
 
-		let error : string | undefined = this.getVariableValue(variable);
+		let error : string | undefined = await this.getVariableValue(variable);
 		if (error)
 		{
 			this.errorResponse(response, error);
@@ -1293,7 +1273,7 @@ export class ASDebugSession extends LoggingDebugSession
 		log("VariablesResponse", response);
 	}
 
-	protected setLocalVariableValue(variable : DebugVariable, value : javaValue) : void
+	protected async setLocalVariableValue(variable : DebugVariable, value : javaValue) : Promise<void>
 	{
 		if (!variable.frame || !variable.thread || !variable.slot)
 		{
@@ -1305,7 +1285,7 @@ export class ASDebugSession extends LoggingDebugSession
 		let values : javaValue[] = [];
 		values.push(value);
 		
-		this.client.SF_SetValues(
+		let reply : boolean = await this.client.SF_SetValues(
 			{
 				"frame" : variable.frame,
 				"thread" : variable.thread,
@@ -1313,16 +1293,15 @@ export class ASDebugSession extends LoggingDebugSession
 				"slots" : slots,
 				"slotValues" : values,
 			}
-		).then((reply) => {
-			if (reply)
-			{
-				variable.orignalValue = value;
-				this.frameMgr.updateDebugVariableValue(variable);
-			}
-		}).catch(() => {return ;});
+		);
+
+		if (reply) {
+			variable.orignalValue = value;
+			this.frameMgr.updateDebugVariableValue(variable);
+		}
 	}
 
-	protected setArrayVariableValue(variable : DebugVariable, index : number, value : javaValue) : void
+	protected async setArrayVariableValue(variable : DebugVariable, index : number, value : javaValue) : Promise<void>
 	{
 		if ('boolean' == typeof(variable.realValue) || 
 			!variable.children)
@@ -1334,22 +1313,20 @@ export class ASDebugSession extends LoggingDebugSession
 		let values : javaUntaggedValue[] = [];
 		values.push(value.value);
 
-		this.client.AR_SetValues(
+		let reply : boolean = await this.client.AR_SetValues(
 			{
 				"arrayObject" : variable.realValue,
 				"firstIndex" : index,
 				"values" : values,
 			}
-		).then((reply) => {
-			if (reply)
-			{
-				child.orignalValue = value;
-				this.frameMgr.updateDebugVariableValue(child);
-			}
-		}).catch(() => {return ;});
+		);
+		if (reply) {
+			child.orignalValue = value;
+			this.frameMgr.updateDebugVariableValue(child);
+		}
 	}
 
-	protected setClassVariableValue(variable : DebugVariable, refTypeId : referenceTypeID, value : javaValue) : void
+	protected async setClassVariableValue(variable : DebugVariable, refTypeId : referenceTypeID, value : javaValue) : Promise<void>
 	{
 		if (!variable.fieldId)
 		{
@@ -1361,23 +1338,21 @@ export class ASDebugSession extends LoggingDebugSession
 		let values : javaUntaggedValue[] = [];
 		values.push(value.value);
 
-		this.client.CT_SetValues(
+		let reply : boolean = await this.client.CT_SetValues(
 			{
 				"clazz" : refTypeId,
 				"count" : 1,
 				"fieldIds" : fieldIds,
 				"values" : values,
 			}
-		).then((reply) => {
-			if (reply)
-			{
-				variable.orignalValue = value;
-				this.frameMgr.updateDebugVariableValue(variable);
-			}
-		}).catch(() => {return ;});
+		);
+		if (reply) {
+			variable.orignalValue = value;
+			this.frameMgr.updateDebugVariableValue(variable);
+		}
 	}
 
-	protected setObjectVariableValue(variable : DebugVariable, object : objectID, value : javaValue) : void
+	protected async setObjectVariableValue(variable : DebugVariable, object : objectID, value : javaValue) : Promise<void>
 	{
 		if (!variable.fieldId)
 		{
@@ -1389,51 +1364,47 @@ export class ASDebugSession extends LoggingDebugSession
 		let values : javaUntaggedValue[] = [];
 		values.push(value.value);
 
-		this.client.OR_SetValues({
+		let reply : boolean = await this.client.OR_SetValues({
 			"object" : object,
 			"count" : 1,
 			"fieldIds" : fieldIds,
 			"values" : values,
-		}).then((reply) => {
-			if (reply)
-			{
-				variable.orignalValue = value;
-				this.frameMgr.updateDebugVariableValue(variable);
-			}
-		}).catch(() => {return ;});
+		});
+		if (reply) {
+			variable.orignalValue = value;
+			this.frameMgr.updateDebugVariableValue(variable);
+		}
 	}
 
-	protected setStringVariableValue(variable : DebugVariable, value : string) : void
+	protected async setStringVariableValue(variable : DebugVariable, value : string) : Promise<void>
 	{
-		this.client.VM_CreateString(
+		let reply : VM_CreateStringReply | undefined = await this.client.VM_CreateString(
 			{
 				"utf" : value,
 			}
-		).then((reply) => {
-			if (reply)
-			{
-				this.setVariableValue(variable, reply.stringObject.toString());
-			}
-		}).catch(() => {return ;});
+		);
+		if (reply) {
+			this.setVariableValue(variable, reply.stringObject.toString());
+		}
 	}
 
-	protected setVariableValue(variable : DebugVariable, value : string) : void
+	protected async setVariableValue(variable : DebugVariable, value : string) : Promise<void>
 	{
 		let fValue : javaValue = formatStringValue(value, variable.type);
 		if (variable.slot)
 		{
-			this.setLocalVariableValue(variable, fValue);
+			await this.setLocalVariableValue(variable, fValue);
 		}
 		else if (variable.parent)
 		{
 			let parent : DebugVariable = variable.parent;
 			if (parent.type == JdwpType.JT_ARRAY)
 			{
-				this.setArrayVariableValue(parent, parseInt(variable.name), fValue);
+				await this.setArrayVariableValue(parent, parseInt(variable.name), fValue);
 			}
 			else if (parent.type == JdwpType.JT_STRING)
 			{
-				this.setStringVariableValue(parent, value);
+				await this.setStringVariableValue(parent, value);
 			}
 			else
 			{
@@ -1444,10 +1415,10 @@ export class ASDebugSession extends LoggingDebugSession
 
 				if (true === variable.static)
 				{
-					this.setClassVariableValue(variable, parent.refTypeId, fValue);
+					await this.setClassVariableValue(variable, parent.refTypeId, fValue);
 				}
 				else{
-					this.setObjectVariableValue(variable, parent.realValue, fValue);
+					await this.setObjectVariableValue(variable, parent.realValue, fValue);
 				}
 			}
 		}
@@ -1475,7 +1446,7 @@ export class ASDebugSession extends LoggingDebugSession
 			if (args.name == variable.children[i].name)
 			{
 				targetVar = variable.children[i];
-				this.setVariableValue(variable.children[i], args.value);
+				await this.setVariableValue(variable.children[i], args.value);
 				break;
 			}
 		}

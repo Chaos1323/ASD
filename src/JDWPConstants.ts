@@ -175,21 +175,21 @@ export enum JdwpTypeTag {
  * Tag constants.
  */
 export enum JdwpType {
-    JT_ARRAY                 = parseInt('['),
-    JT_BYTE                  = parseInt('B'),
-    JT_CHAR                  = parseInt('C'),
-    JT_OBJECT                = parseInt('L'),
-    JT_FLOAT                 = parseInt('F'),
-    JT_DOUBLE                = parseInt('D'),
-    JT_INT                   = parseInt('I'),
-    JT_LONG                  = parseInt('J'),
-    JT_SHORT                 = parseInt('S'),
-    JT_VOID                  = parseInt('V'),
-    JT_BOOLEAN               = parseInt('Z'),
-    JT_STRING                = parseInt('s'),
-    JT_THREAD                = parseInt('t'),
-    JT_THREAD_GROUP          = parseInt('g'),
-    JT_CLASS_LOADER          = parseInt('l'),
-    JT_CLASS_OBJECT          = parseInt('c'),
+    JT_ARRAY                 = 91,//'['
+    JT_BYTE                  = 66,//'B'
+    JT_CHAR                  = 67,//'C'
+    JT_OBJECT                = 76,//'L'
+    JT_FLOAT                 = 70,//'F'
+    JT_DOUBLE                = 68,//'D'
+    JT_INT                   = 73,//'I'
+    JT_LONG                  = 74,//'J'
+    JT_SHORT                 = 83,//'S'
+    JT_VOID                  = 86,//'V'
+    JT_BOOLEAN               = 90,//'Z'
+    JT_STRING                = 115,//'s'
+    JT_THREAD                = 116,//'t'
+    JT_THREAD_GROUP          = 103,//'g'
+    JT_CLASS_LOADER          = 108,//'l'
+    JT_CLASS_OBJECT          = 99,//'c'
 };
 

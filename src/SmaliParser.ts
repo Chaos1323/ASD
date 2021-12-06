@@ -307,13 +307,42 @@ export class SmaliParser
         this.curFiles = [];
     }
 
-    public getLocalRegs(uri : string, methodName : string, offset : number) : SmaliLocalReg[] | undefined
+    public getLocalRegs(uri : string, mthName : string, offset : number) : SmaliLocalReg[] | undefined
     {
-        return undefined;
+        let mth : MethodDebugInfo | undefined = this.parseSmaliMethod(uri, mthName);
+        if (!mth)
+        {
+            return undefined;
+        }
+
+        let regs : SmaliLocalReg[] = [];
+        let slots : number[] = [];
+        for (let i = 0; i < mth.localVars.length; i++) {
+            let scopevar : SmaliReg = mth.localVars[i];
+            if (-1 != slots.indexOf(scopevar.slot)) {
+                continue;
+            }
+
+            if (scopevar.start <= offset && offset <= scopevar.end) {
+                slots.push(scopevar.slot);
+                regs.push({
+                    "name" : scopevar.name,
+                    "slot" : scopevar.slot,
+                    "type" : scopevar.refType,
+                });
+            }
+        }
+
+        return regs;
     }
 
     public getLineInfoByLine(uri : string, line : number) : SmaliLineInfo | undefined
     {
+        if (line <= 2)
+        {
+            return undefined;
+        }
+
         let clsInfo : ClsDebugInfo | undefined = this.debugInfos[uri];
         if (clsInfo)
         {
@@ -416,10 +445,8 @@ export class SmaliParser
             for (let i = 0; i < mth.offsets.length; i++) {
                 if (index == mth.offsets[i]) {
                     line = i + 1;
-                    break;
                 }
                 else if (index < mth.offsets[i]) {
-                    line = i;
                     break;
                 }
             }
@@ -668,7 +695,7 @@ export class SmaliParser
                                 allBlocks.push(region);
                             }
 
-                            region = new Region(name, offset);
+                            region = new Region(insnInfo.refType, offset);
                             break;
                         case DexInsnType.DIT_MACOR_REGISTER:
                             regsStart = parseInt(insnInfo.refType) - regsStart;
@@ -1112,7 +1139,7 @@ export class SmaliParser
         }
 
         //invoke
-        m = insn.match(/^\s+(invoke-[a-z]*)\s+[0-9$_a-zA-Z;\-><\/\{\},\s]+\(.*\)([0-9a-zA-Z$\/_]+)\s*/);
+        m = insn.match(/^\s+(invoke-[a-z]*)\s+[0-9$_a-zA-Z;\-><\/\{\},\s]+\(.*\)([0-9a-zA-Z$\/_\[]+)\s*/);
         if (m)
         {
             return {
@@ -1242,6 +1269,19 @@ export class SmaliParser
         {
             return {
                 "OpType" : DexInsnType.DIT_NEW_ARRAY,
+                "defReg" : m[1],
+                "refReg" : '',
+                "refType" : m[2],
+                "size" : 2,
+            };
+        }
+
+        //new instance
+        m = insn.match(/^\s+new-instance\s+([vp0-9]+),\s*(L[a-zA-Z0-9$_\/]+;)\s*/);
+        if (m)
+        {
+            return {
+                "OpType" : DexInsnType.DIT_NEW_INSTANCE,
                 "defReg" : m[1],
                 "refReg" : '',
                 "refType" : m[2],

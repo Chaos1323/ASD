@@ -89,7 +89,7 @@ export class ThreadFrameManager {
         let vars : DebugVariable[] | undefined = this.frameVariables[frameid];
         if (!vars)
         {
-            this.frameVariables[frameid] = [];
+            vars = this.frameVariables[frameid] = [];
         }
 
         vars.push(variable);
@@ -98,70 +98,70 @@ export class ThreadFrameManager {
     }
 
     public updateDebugVariableValue(variable: DebugVariable) {
-        variable.value = "error";
+        variable.value = "get-error";
         variable.type = variable.orignalValue.tag;
         switch (variable.orignalValue.tag) {
             case JdwpType.JT_ARRAY:
-                if (variable.orignalValue.value.A)
+                if (undefined != variable.orignalValue.value.A)
                 {
                     variable.realValue = variable.orignalValue.value.A;
                     let size : number = variable.size?variable.size:0;
-                    variable.value = variable.realType?variable.realType:"" + `[${size.toString()}]`;
+                    variable.value = (variable.realType?variable.realType:"") + `[${size.toString()}]`;
                     variable.referenceId = variable.id;
                 }
                 break;
             case JdwpType.JT_BYTE:
-                if (variable.orignalValue.value.B)
+                if (undefined != variable.orignalValue.value.B)
                 {
                     variable.realValue = variable.orignalValue.value.B;
                     variable.value = variable.realValue.toString();
                 }
                 break;
             case JdwpType.JT_CHAR:
-                if (variable.orignalValue.value.C)
+                if (undefined != variable.orignalValue.value.C)
                 {
                     variable.realValue = variable.orignalValue.value.C;
                     variable.value = variable.realValue.toString();
                 }
                 break;
             case JdwpType.JT_OBJECT:
-                if (variable.orignalValue.value.L)
+                if (undefined != variable.orignalValue.value.L)
                 {
                     variable.realValue = variable.orignalValue.value.L;
-                    variable.value = variable.realType?variable.realType:"" + `@${variable.realValue.toString(16)}`;
+                    variable.value = (variable.realType?variable.realType:"") + `@${variable.realValue.toString(16)}`;
                     variable.referenceId = variable.id;
                 }
                 break;
             case JdwpType.JT_FLOAT:
-                if (variable.orignalValue.value.F)
+                if (undefined != variable.orignalValue.value.F)
                 {
                     variable.realValue = variable.orignalValue.value.F;
                     variable.value = variable.realValue.toString();
                 }
                 break;
             case JdwpType.JT_DOUBLE:
-                if (variable.orignalValue.value.D)
+                if (undefined != variable.orignalValue.value.D)
                 {
                     variable.realValue = variable.orignalValue.value.D;
                     variable.value = variable.realValue.toString();
                 }
                 break;
             case JdwpType.JT_INT:
-                if (variable.orignalValue.value.I)
+                if (undefined != variable.orignalValue.value.I)
                 {
                     variable.realValue = variable.orignalValue.value.I;
                     variable.value = variable.realValue.toString();
                 }
                 break;
             case JdwpType.JT_LONG:
-                if (variable.orignalValue.value.J)
+                if (undefined != variable.orignalValue.value.J)
                 {
                     variable.realValue = variable.orignalValue.value.J;
                     variable.value = variable.realValue.toString();
                 }
                 break;
             case JdwpType.JT_SHORT:
-                if (variable.orignalValue.value.S)
+                if (undefined != variable.orignalValue.value.S)
                 {
                     variable.realValue = variable.orignalValue.value.S;
                     variable.value = variable.realValue.toString();
@@ -170,14 +170,14 @@ export class ThreadFrameManager {
             case JdwpType.JT_VOID:
                 break;
             case JdwpType.JT_BOOLEAN:
-                if (variable.orignalValue.value.Z)
+                if (undefined != variable.orignalValue.value.Z)
                 {
                     variable.realValue = variable.orignalValue.value.Z;
                     variable.value = variable.realValue.toString();
                 }
                 break;
             case JdwpType.JT_STRING:
-                if (variable.orignalValue.value.s)
+                if (undefined != variable.orignalValue.value.s)
                 {
                     variable.realValue = variable.orignalValue.value.s;
                     variable.value = "string@0x" + variable.realValue.toString(16);
@@ -185,28 +185,28 @@ export class ThreadFrameManager {
                 }
                 break;
             case JdwpType.JT_THREAD:
-                if (variable.orignalValue.value.t)
+                if (undefined != variable.orignalValue.value.t)
                 {
                     variable.realValue = variable.orignalValue.value.t;
                     variable.value = "thread@0x" + variable.realValue.toString(16);
                 }
                 break;
             case JdwpType.JT_THREAD_GROUP:
-                if (variable.orignalValue.value.g)
+                if (undefined != variable.orignalValue.value.g)
                 {
                     variable.realValue = variable.orignalValue.value.g;
                     variable.value = "group@0x" + variable.realValue.toString(16);
                 }
                 break;
             case JdwpType.JT_CLASS_LOADER:
-                if (variable.orignalValue.value.l)
+                if (undefined != variable.orignalValue.value.l)
                 {
                     variable.realValue = variable.orignalValue.value.l;
                     variable.value = "classloader@0x" + variable.realValue.toString(16);
                 }
                 break;
             case JdwpType.JT_CLASS_OBJECT:
-                if (variable.orignalValue.value.c)
+                if (undefined != variable.orignalValue.value.c)
                 {
                     variable.realValue = variable.orignalValue.value.c;
                     variable.value = "classobject@0x" + variable.realValue.toString(16);

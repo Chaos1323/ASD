@@ -754,8 +754,8 @@ export class JDWPClient extends EventEmitter
         //Returns the value of one or more static fields of the reference type
         let req : WriteBuffer = new WriteBuffer(referenceTypeIDSize + fieldIDSize * cmd.fieldIds.length + 4);
         req.writeReferenceTypeId(cmd.refType);
-        req.writeFieldIdArray(cmd.fieldIds);
         req.writeUIntBE(cmd.fieldIds.length);
+        req.writeFieldIdArray(cmd.fieldIds);
 
         let response : Buffer = await this.JdwpCommand(req.getDataBuffer(), 2, 6);
         let pkt: ReadBuffer = new ReadBuffer(response);
@@ -2016,46 +2016,46 @@ export class JDWPClient extends EventEmitter
             switch (cmd.modifiers[i].modKind)
             {
                 case JdwpModKind.MK_COUNT:
-                    if (modifier.count)
+                    if (undefined != modifier.count)
                     {
                         req.writeUIntBE(modifier.count);
                     }
                     break;
                 case JdwpModKind.MK_CONDITIONAL:
-                    if (modifier.exprID)
+                    if (undefined != modifier.exprID)
                     {
                         req.writeUIntBE(modifier.exprID);
                     }
                     break;
                 case JdwpModKind.MK_THREAD_ONLY:
-                    if (modifier.thread)
+                    if (undefined != modifier.thread)
                     {
                         req.writeThreadId(modifier.thread);
                     }
                     break;
                 case JdwpModKind.MK_CLASS_ONLY:
-                    if (modifier.clazz)
+                    if (undefined != modifier.clazz)
                     {
                         req.writeReferenceTypeId(modifier.clazz);
                     }
                     break;
                 case JdwpModKind.MK_CLASS_MATCH:
                 case JdwpModKind.MK_CLASS_EXCLUDE:
-                    if (modifier.classPattern)
+                    if (undefined != modifier.classPattern)
                     {
                         req.writeJavaString(modifier.classPattern);
                     }
                     break;
                 case JdwpModKind.MK_LOCATION_ONLY:
-                    if (modifier.loc)
+                    if (undefined != modifier.loc)
                     {
                         req.writeLocation(modifier.loc);
                     }
                     break;
                 case JdwpModKind.MK_EXCEPTION_ONLY:
-                    if (modifier.exceptionOrNull && 
-                        modifier.caught &&
-                        modifier.uncaught)
+                    if (undefined != modifier.exceptionOrNull && 
+                        undefined != modifier.caught &&
+                        undefined != modifier.uncaught)
                     {
                         req.writeReferenceTypeId(modifier.exceptionOrNull);
                         req.writeBoolean(modifier.caught);
@@ -2063,17 +2063,17 @@ export class JDWPClient extends EventEmitter
                     }
                     break;
                 case JdwpModKind.MK_FIELD_ONLY:
-                    if (modifier.declaring && 
-                        modifier.fieldId)
+                    if (undefined != modifier.declaring && 
+                        undefined != modifier.fieldId)
                     {
                         req.writeReferenceTypeId(modifier.declaring);
                         req.writeFieldId(modifier.fieldId);
                     }
                     break;
                 case JdwpModKind.MK_STEP:
-                    if (modifier.thread && 
-                        modifier.size &&
-                        modifier.depth)
+                    if (undefined != modifier.thread && 
+                        undefined != modifier.size &&
+                        undefined != modifier.depth)
                     {
                         req.writeThreadId(modifier.thread);
                         req.writeUIntBE(modifier.size);
@@ -2081,13 +2081,13 @@ export class JDWPClient extends EventEmitter
                     }
                     break;
                 case JdwpModKind.MK_INSTANCE_ONLY:
-                    if (modifier.instance)
+                    if (undefined != modifier.instance)
                     {
                         req.writeObjectId(modifier.instance);
                     }
                     break;
                 case JdwpModKind.MK_SOURCENAME_MATCH:
-                    if (modifier.sourceNamePattern)
+                    if (undefined != modifier.sourceNamePattern)
                     {
                         req.writeJavaString(modifier.sourceNamePattern);
                     }

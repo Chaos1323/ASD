@@ -28,6 +28,7 @@ Android Smali bytecode Debugger
 5.select ASD configure item
 
 6.finally the `launch.json` content should be like this
+<p align=center>
     {
         "version": "0.2.0",
         "configurations": [
@@ -42,7 +43,7 @@ Android Smali bytecode Debugger
             }
        ]
     }
-*
+</p>
     * the `packageName` : the apk package name
     * the `mainActivity` : the apk entry class
     * the `deviceId` : your device id which getted from the `adb devices` command

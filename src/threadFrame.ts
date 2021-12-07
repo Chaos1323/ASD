@@ -129,7 +129,10 @@ export class ThreadFrameManager {
                 {
                     variable.realValue = variable.orignalValue.value.L;
                     variable.value = (variable.realType?variable.realType:"") + `@${variable.realValue.toString(16)}`;
-                    variable.referenceId = variable.id;
+                    if (variable.realValue)
+                    {
+                        variable.referenceId = variable.id;
+                    }
                 }
                 break;
             case JdwpType.JT_FLOAT:

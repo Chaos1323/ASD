@@ -1554,7 +1554,7 @@ export class ASDebugSession extends LoggingDebugSession
 
 		response.body = response.body || {};
 		response.body.value = targetVar?targetVar.value:"error";
-		response.body.namedVariables = 1;
+		this.sendResponse(response);
 		log("SetVariablesResponse", response);
 	}
 

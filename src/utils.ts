@@ -2,7 +2,7 @@ import * as cp from 'child_process';
 import exp = require('constants');
 import path = require('path');
 import { logger } from 'vscode-debugadapter/lib/logger';
-import { javaUntaggedValue, javaValue, objectIDSize } from './buffer';
+import { javaUntaggedValue, javaValue, objectID, objectIDSize } from './buffer';
 import { JdwpClassStatus, JdwpType } from './JDWPConstants';
 
 export class PromiseCompleter<T> {
@@ -266,4 +266,28 @@ export function convertStringType(type : string) : JdwpType
 	}
 
 	return JdwpType.JT_VOID;
+}
+
+export function getObjectId(value : javaValue) : objectID | undefined
+{
+	switch (value.tag) {
+		case JdwpType.JT_ARRAY:
+			return value.value.A;
+		case JdwpType.JT_OBJECT:
+			return value.value.L;
+		case JdwpType.JT_STRING:
+			return value.value.s;
+		case JdwpType.JT_THREAD:
+			return value.value.t;
+		case JdwpType.JT_THREAD_GROUP:
+			return value.value.g;
+		case JdwpType.JT_CLASS_OBJECT:
+			return value.value.l;
+		case JdwpType.JT_CLASS_OBJECT:
+			return value.value.c;
+		default:
+			break;
+	}
+
+	return undefined;
 }

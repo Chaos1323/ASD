@@ -51,6 +51,7 @@ export interface DebugVariable
     thread? : threadID;
     size? : number; //used by array
     refTypeId : referenceTypeID; //used by class or interface object
+    stringObject? : objectID;
     fieldId? : fieldID; //used by class object
     frame? : frameID;
     type : JdwpType;

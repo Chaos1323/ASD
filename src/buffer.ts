@@ -835,63 +835,63 @@ export class WriteBuffer
 
     public writeUntaggedValue(value : javaUntaggedValue) : void 
     {
-        if (value.A)
+        if (undefined != value.A)
         {
             this.writeArrayId(value.A);
         }
-        else if (value.B)
+        else if (undefined != value.B)
         {
             this.writeByte(value.B);
         }
-        else if (value.C)
+        else if (undefined != value.C)
         {
             this.writeUShortBE(value.C);
         }
-        else if (value.L)
+        else if (undefined != value.L)
         {
             this.writeObjectId(value.L);
         }
-        else if (value.F)
+        else if (undefined != value.F)
         {
             this.writeUIntBE(value.F);
         }
-        else if (value.D)
+        else if (undefined != value.D)
         {
             this.writeULongBE(value.D);
         }
-        else if (value.I)
+        else if (undefined != value.I)
         {
             this.writeUIntBE(value.I);
         }
-        else if (value.J)
+        else if (undefined != value.J)
         {
             this.writeULongBE(value.J);
         }
-        else if (value.S)
+        else if (undefined != value.S)
         {
             this.writeUShortBE(value.S);
         }
-        else if (value.Z)
+        else if (undefined != value.Z)
         {
             this.writeBoolean(value.Z);
         }
-        else if (value.s)
+        else if (undefined != value.s)
         {
             this.writeStringId(value.s);
         }
-        else if (value.t)
+        else if (undefined != value.t)
         {
             this.writeThreadId(value.t);
         }
-        else if (value.g)
+        else if (undefined != value.g)
         {
             this.writeThreadGroupId(value.g);
         }
-        else if (value.l)
+        else if (undefined != value.l)
         {
             this.writeClassLoaderId(value.l);
         }
-        else if (value.c)
+        else if (undefined != value.c)
         {
             this.writeObjectId(value.c);
         }

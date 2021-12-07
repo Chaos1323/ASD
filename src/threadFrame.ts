@@ -182,6 +182,7 @@ export class ThreadFrameManager {
                     variable.realValue = variable.orignalValue.value.s;
                     variable.value = "string@0x" + variable.realValue.toString(16);
                     variable.referenceId = variable.id;
+                    variable.stringObject = variable.realValue;
                 }
                 break;
             case JdwpType.JT_THREAD:

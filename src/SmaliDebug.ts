@@ -21,7 +21,7 @@ import {
 } from 'vscode-debugadapter';
 import { DebugProtocol } from 'vscode-debugprotocol';
 import { JDWPClient } from './JDWPClient';
-import { convertStringType, formatClsNameFromPath, formatStringValue, isPrimitiveType, log, logError } from './utils';
+import { convertStringType, formatClsNameFromPath, formatStringValue, getObjectId, isPrimitiveType, log, logError } from './utils';
 import { arrayID, fieldID, frameID, frameIDSize, javaUntaggedValue, javaValue, methodID, objectID, 
 	referenceTypeID, setIDSizes, threadID } from './buffer';
 import { JdwpEventKind, JdwpModKind, JdwpStepDepth, JdwpStepSize, JdwpSuspendPolicy, 
@@ -29,7 +29,7 @@ import { JdwpEventKind, JdwpModKind, JdwpStepDepth, JdwpStepSize, JdwpSuspendPol
 import { AR_GetValuesReply, AR_LengthReply, ER_ClearRequest, ER_SetReply, ER_SetRequest, 
 	JavaEvent, JavaModifier, OR_GetValuesReply, OR_ReferenceTypeReply, RT_FieldsReply, RT_GetValuesReply, RT_MethodsReply, 
 	RT_SignatureReply, 
-	SF_GetValuesReply, TR_FramesReply, TR_NameReply, VM_AllClassesWithGenericReply, 
+	SF_GetValuesReply, SR_ValueReply, TR_FramesReply, TR_NameReply, VM_AllClassesWithGenericReply, 
 	VM_AllThreadsReply, VM_CreateStringReply, VM_IDSizesReply } from './JDWPProtocol';
 import { AdbClient } from './AdbClient';
 import { BreakpointStatus } from './enums';
@@ -1104,6 +1104,35 @@ export class ASDebugSession extends LoggingDebugSession
 					"orignalValue": reply.values.objectValues[i],
 				};
 
+				//get realtype and reftypeid
+				let objId : objectID | undefined = getObjectId(child.orignalValue);
+				if (undefined != objId)
+				{
+					let reply2 : OR_ReferenceTypeReply | undefined = await this.client.OR_ReferenceType(
+						{
+							"object": objId,
+						}
+					);
+	
+					if (reply2)
+					{
+						child.refTypeId = reply2.typeID;
+						child.realType = this.allcalsses_id.get(child.refTypeId)?.signature;
+					}
+				}				
+
+				if (JdwpType.JT_ARRAY == child.orignalValue.tag) {
+					child.size = 0;
+					let reply : AR_LengthReply | undefined = await this.client.AR_Length(
+						{
+							"arrayObject": child.orignalValue.value.A ? child.orignalValue.value.A : 0,
+						}
+					);
+					if (reply) {
+						child.size = reply.arrayLength;
+					}
+				}
+
 				child.id = this.frameMgr.addFrameVariable(variable.frameId, child);
 				this.frameMgr.updateDebugVariableValue(child);
 				variable.children.push(child);
@@ -1180,6 +1209,18 @@ export class ASDebugSession extends LoggingDebugSession
 				"orignalValue": reply2.values[i],
 			};
 
+			if (JdwpType.JT_ARRAY == child.orignalValue.tag) {
+				child.size = 0;
+				let reply : AR_LengthReply | undefined = await this.client.AR_Length(
+					{
+						"arrayObject": child.orignalValue.value.A ? child.orignalValue.value.A : 0,
+					}
+				);
+				if (reply) {
+					child.size = reply.arrayLength;
+				}
+			}
+
 			child.fieldId = normalFields[i];
 			child.id = this.frameMgr.addFrameVariable(variable.frameId, child);
 			this.frameMgr.updateDebugVariableValue(child);
@@ -1214,11 +1255,57 @@ export class ASDebugSession extends LoggingDebugSession
 				"orignalValue": reply3.values[i],
 			};
 
+			if (JdwpType.JT_ARRAY == child.orignalValue.tag) {
+				child.size = 0;
+				let reply : AR_LengthReply | undefined = await this.client.AR_Length(
+					{
+						"arrayObject": child.orignalValue.value.A ? child.orignalValue.value.A : 0,
+					}
+				);
+				if (reply) {
+					child.size = reply.arrayLength;
+				}
+			}
+
 			child.fieldId = staticFields[i];
 			child.id = this.frameMgr.addFrameVariable(variable.frameId, child);
 			this.frameMgr.updateDebugVariableValue(child);
 			variable.children?.push(child);
 		}
+
+		return undefined;
+	}
+
+	protected async getStringVariableValue(obj : objectID, variable : DebugVariable) : Promise<string | undefined>
+	{
+		let reply : SR_ValueReply | undefined = await this.client.SR_Value({
+			"stringObject" : obj,
+		});
+
+		if (!reply) {
+			return `get string ${variable.realType} value failed.`;
+		}
+
+		let child: DebugVariable = {
+			"id": 0,
+			"frameId": variable.frameId,
+			"realValue": 0,
+			"refTypeId": 0,
+			"value": reply.stringValue == ''?"''":reply.stringValue,
+			"realType": '',
+			"type": JdwpType.JT_VOID,
+			"name": 'string',
+			"parent": variable,
+			"static": false,
+			"orignalValue": variable.orignalValue,
+		};
+
+		child.id = this.frameMgr.addFrameVariable(variable.frameId, child);
+		if (!variable.children)
+		{
+			variable.children = [];
+		}
+		variable.children.push(child);
 
 		return undefined;
 	}
@@ -1233,6 +1320,10 @@ export class ASDebugSession extends LoggingDebugSession
 		else if (variable.size)
 		{
 			return await this.getArrayVariableValue(variable.size, variable);
+		}
+		else if (variable.stringObject)
+		{
+			return await this.getStringVariableValue(variable.stringObject, variable);
 		}
 		else if (variable.refTypeId)
 		{
@@ -1384,7 +1475,17 @@ export class ASDebugSession extends LoggingDebugSession
 			}
 		);
 		if (reply) {
+			await this.client.OR_DisableCollection(
+				{
+					"object" : reply.stringObject,
+				}
+			);
 			this.setVariableValue(variable, reply.stringObject.toString());
+			await this.client.OR_EnableCollection(
+				{
+					"object" : reply.stringObject,
+				}
+			);
 		}
 	}
 
@@ -1453,6 +1554,7 @@ export class ASDebugSession extends LoggingDebugSession
 
 		response.body = response.body || {};
 		response.body.value = targetVar?targetVar.value:"error";
+		response.body.namedVariables = 1;
 		log("SetVariablesResponse", response);
 	}
 

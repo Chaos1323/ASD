@@ -1139,7 +1139,7 @@ export class SmaliParser
         }
 
         //invoke
-        m = insn.match(/^\s+(invoke-[a-z]*)\s+[0-9$_a-zA-Z;\-><\/\{\},\s]+\(.*\)([0-9a-zA-Z$\/_\[]+)\s*/);
+        m = insn.match(/^\s+(invoke-[a-z]*)\s+[0-9$_a-zA-Z;\-><\/\{\}\[,\s]+\(.*\)([0-9a-zA-Z$\/_\[]+)\s*/);
         if (m)
         {
             return {
@@ -1387,7 +1387,7 @@ export class SmaliParser
         }
 
         //iget or sget
-        m = insn.match(/^\s+(iget|iget-wide|iget-object|iget-boolean|iget-byte|iget-char|iget-short|sget|sget-wide|sget-object|sget-boolean|sget-byte|sget-char|sget-short)\s+([vp0-9]+),[^:]+:([L$0-9_a-zA-Z\/]+)\s*/);
+        m = insn.match(/^\s+(iget|iget-wide|iget-object|iget-boolean|iget-byte|iget-char|iget-short|sget|sget-wide|sget-object|sget-boolean|sget-byte|sget-char|sget-short)\s+([vp0-9]+),[^:]+:([L$0-9_a-zA-Z\/\[]+)\s*/);
         if (m) {
             return {
                 "OpType": DexInsnType.DIT_IGET,

@@ -400,7 +400,7 @@ export class ReadBuffer
                 };
             case JdwpType.JT_CHAR:
                 return {
-                    "C" : this.readUShortBE(),
+                    "C" : this.readShortBE(),
                 };
             case JdwpType.JT_OBJECT:
                 return {
@@ -408,23 +408,23 @@ export class ReadBuffer
                 };
             case JdwpType.JT_FLOAT:
                 return {
-                    "F" : this.readUIntBE(),
+                    "F" : this.readIntBE(),
                 };
             case JdwpType.JT_DOUBLE:
                 return {
-                    "D" : this.readULongBE(),
+                    "D" : this.readLongBE(),
                 };
             case JdwpType.JT_INT:
                 return {
-                    "I" : this.readUIntBE(),
+                    "I" : this.readIntBE(),
                 };
             case JdwpType.JT_LONG:
                 return {
-                    "J" : this.readULongBE(),
+                    "J" : this.readLongBE(),
                 };
             case JdwpType.JT_SHORT:
                 return {
-                    "S" : this.readUShortBE(),
+                    "S" : this.readShortBE(),
                 };
             case JdwpType.JT_VOID:
                 return {
@@ -845,7 +845,7 @@ export class WriteBuffer
         }
         else if (undefined != value.C)
         {
-            this.writeUShortBE(value.C);
+            this.writeShortBE(value.C);
         }
         else if (undefined != value.L)
         {
@@ -853,23 +853,23 @@ export class WriteBuffer
         }
         else if (undefined != value.F)
         {
-            this.writeUIntBE(value.F);
+            this.writeIntBE(value.F);
         }
         else if (undefined != value.D)
         {
-            this.writeULongBE(value.D);
+            this.writeLongBE(value.D);
         }
         else if (undefined != value.I)
         {
-            this.writeUIntBE(value.I);
+            this.writeIntBE(value.I);
         }
         else if (undefined != value.J)
         {
-            this.writeULongBE(value.J);
+            this.writeLongBE(value.J);
         }
         else if (undefined != value.S)
         {
-            this.writeUShortBE(value.S);
+            this.writeShortBE(value.S);
         }
         else if (undefined != value.Z)
         {

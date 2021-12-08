@@ -27,8 +27,8 @@ import { arrayID, fieldID, frameID, frameIDSize, javaUntaggedValue, javaValue, m
 import { JdwpEventKind, JdwpModKind, JdwpStepDepth, JdwpStepSize, JdwpSuspendPolicy, 
 	JdwpType, JdwpTypeTag } from './JDWPConstants';
 import { AR_GetValuesReply, AR_LengthReply, ER_ClearRequest, ER_SetReply, ER_SetRequest, 
-	JavaEvent, JavaModifier, OR_GetValuesReply, OR_ReferenceTypeReply, RT_FieldsReply, RT_GetValuesReply, RT_MethodsReply, 
-	RT_SignatureReply, 
+	JavaEvent, JavaModifier, OR_GetValuesReply, OR_ReferenceTypeReply, RT_FieldsReply, RT_GetValuesReply, 
+	RT_MethodsReply, RT_SignatureReply, 
 	SF_GetValuesReply, SR_ValueReply, TR_FramesReply, TR_NameReply, VM_AllClassesWithGenericReply, 
 	VM_AllThreadsReply, VM_CreateStringReply, VM_IDSizesReply } from './JDWPProtocol';
 import { AdbClient } from './AdbClient';
@@ -617,7 +617,7 @@ export class ASDebugSession extends LoggingDebugSession
 	{
 		log("PauseRequest", args);
 		let thread : threadID | undefined = this.threadHandles.get(args.threadId);
-		if (!thread)
+		if (undefined == thread)
 		{
 			this.errorResponse(response, `No thread with id ${args.threadId}`);
 			return;
@@ -636,7 +636,7 @@ export class ASDebugSession extends LoggingDebugSession
 	{
 		log("ContinueRequest", args);
 		let thread : threadID | undefined = this.threadHandles.get(args.threadId);
-		if (!thread)
+		if (undefined == thread)
 		{
 			this.errorResponse(response, `No thread with id ${args.threadId}`);
 			return;
@@ -678,7 +678,7 @@ export class ASDebugSession extends LoggingDebugSession
 	{
 		log("NextRequest", args);
 		let thread : threadID | undefined = this.threadHandles.get(args.threadId);
-		if (!thread)
+		if (undefined == thread)
 		{
 			this.errorResponse(response, `No thread with id ${args.threadId}`);
 			return;
@@ -695,7 +695,7 @@ export class ASDebugSession extends LoggingDebugSession
 	{
 		log("StepInRequest", args);
 		let thread : threadID | undefined = this.threadHandles.get(args.threadId);
-		if (!thread)
+		if (undefined == thread)
 		{
 			this.errorResponse(response, `No thread with id ${args.threadId}`);
 			return;
@@ -712,7 +712,7 @@ export class ASDebugSession extends LoggingDebugSession
 	{
 		log("StepOutRequest", args);
 		let thread : threadID | undefined = this.threadHandles.get(args.threadId);
-		if (!thread)
+		if (undefined == thread)
 		{
 			this.errorResponse(response, `No thread with id ${args.threadId}`);
 			return;
@@ -741,7 +741,7 @@ export class ASDebugSession extends LoggingDebugSession
 	{
 		log("RestartFrameRequest", args);
 		let frame : JavaFrame | undefined = this.frameMgr.getFrameFromId(args.frameId);
-		if (!frame)
+		if (undefined == frame)
 		{
 			this.errorResponse(response, `No frame with id ${args.frameId}`);
 			return;
@@ -757,7 +757,7 @@ export class ASDebugSession extends LoggingDebugSession
 	{
 		log("StackTraceRequest", args);
 		let thread : threadID | undefined = this.threadHandles.get(args.threadId);
-		if (!thread)
+		if (undefined == thread)
 		{
 			this.errorResponse(response, `No thread with id ${args.threadId}`);
 			return;
@@ -828,7 +828,7 @@ export class ASDebugSession extends LoggingDebugSession
 	{
 		log("ScopesRequest", args);
 		let frame : JavaFrame | undefined = this.frameMgr.getFrameFromId(args.frameId);
-		if (!frame)
+		if (undefined == frame)
 		{
 			this.errorResponse(response, `No frame with id ${args.frameId}`);
 			return;
@@ -882,7 +882,7 @@ export class ASDebugSession extends LoggingDebugSession
 	protected async getLocalVariableValue(variable : DebugVariable) : Promise<string | undefined>
 	{
 		//local variable
-		if (!variable.frame || !variable.thread)
+		if (undefined == variable.frame || undefined == variable.thread)
 		{
 			return "variable's frame or thread is undefined.";
 		}
@@ -965,7 +965,7 @@ export class ASDebugSession extends LoggingDebugSession
 	protected async getLocalVariableValue_OneByOne(variable : DebugVariable) : Promise<string | undefined>
 	{
 		//local variable
-		if (!variable.frame || !variable.thread)
+		if (undefined == variable.frame || undefined == variable.thread)
 		{
 			return "variable's frame or thread is undefined.";
 		}
@@ -1364,11 +1364,11 @@ export class ASDebugSession extends LoggingDebugSession
 		log("VariablesResponse", response);
 	}
 
-	protected async setLocalVariableValue(variable : DebugVariable, value : javaValue) : Promise<void>
+	protected async setLocalVariableValue(variable : DebugVariable, value : javaValue) : Promise<boolean>
 	{
-		if (!variable.frame || !variable.thread || !variable.slot)
+		if (undefined == variable.frame || undefined == variable.thread || undefined == variable.slot)
 		{
-			return ;
+			return false;
 		}
 
 		let slots : number[] = [];
@@ -1389,15 +1389,19 @@ export class ASDebugSession extends LoggingDebugSession
 		if (reply) {
 			variable.orignalValue = value;
 			this.frameMgr.updateDebugVariableValue(variable);
+
+			return true;
 		}
+
+		return false;
 	}
 
-	protected async setArrayVariableValue(variable : DebugVariable, index : number, value : javaValue) : Promise<void>
+	protected async setArrayVariableValue(variable : DebugVariable, index : number, value : javaValue) : Promise<boolean>
 	{
 		if ('boolean' == typeof(variable.realValue) || 
 			!variable.children)
 		{
-			return ;
+			return false;
 		}
 
 		let child : DebugVariable = variable.children[index];
@@ -1414,14 +1418,18 @@ export class ASDebugSession extends LoggingDebugSession
 		if (reply) {
 			child.orignalValue = value;
 			this.frameMgr.updateDebugVariableValue(child);
+
+			return true;
 		}
+
+		return false;
 	}
 
-	protected async setClassVariableValue(variable : DebugVariable, refTypeId : referenceTypeID, value : javaValue) : Promise<void>
+	protected async setClassVariableValue(variable : DebugVariable, refTypeId : referenceTypeID, value : javaValue) : Promise<boolean>
 	{
-		if (!variable.fieldId)
+		if (undefined == variable.fieldId)
 		{
-			return ;
+			return false;
 		}
 
 		let fieldIds : fieldID[] = [];
@@ -1440,14 +1448,17 @@ export class ASDebugSession extends LoggingDebugSession
 		if (reply) {
 			variable.orignalValue = value;
 			this.frameMgr.updateDebugVariableValue(variable);
+			return true;
 		}
+
+		return false;
 	}
 
-	protected async setObjectVariableValue(variable : DebugVariable, object : objectID, value : javaValue) : Promise<void>
+	protected async setObjectVariableValue(variable : DebugVariable, object : objectID, value : javaValue) : Promise<boolean>
 	{
-		if (!variable.fieldId)
+		if (undefined == variable.fieldId)
 		{
-			return ;
+			return false;
 		}
 
 		let fieldIds : fieldID[] = [];
@@ -1464,10 +1475,13 @@ export class ASDebugSession extends LoggingDebugSession
 		if (reply) {
 			variable.orignalValue = value;
 			this.frameMgr.updateDebugVariableValue(variable);
+			return true;
 		}
+
+		return false;
 	}
 
-	protected async setStringVariableValue(variable : DebugVariable, value : string) : Promise<void>
+	protected async setStringVariableValue(variable : DebugVariable, value : string) : Promise<boolean>
 	{
 		let reply : VM_CreateStringReply | undefined = await this.client.VM_CreateString(
 			{
@@ -1480,49 +1494,59 @@ export class ASDebugSession extends LoggingDebugSession
 					"object" : reply.stringObject,
 				}
 			);
-			this.setVariableValue(variable, reply.stringObject.toString());
+			let res : boolean = await this.setVariableValue(variable, reply.stringObject.toString());
+			if (res && variable.children)
+			{
+				variable.children[0].value= value;
+			}
 			await this.client.OR_EnableCollection(
 				{
 					"object" : reply.stringObject,
 				}
 			);
+
+			return true;
 		}
+
+		return false;
 	}
 
-	protected async setVariableValue(variable : DebugVariable, value : string) : Promise<void>
+	protected async setVariableValue(variable : DebugVariable, value : string) : Promise<boolean>
 	{
 		let fValue : javaValue = formatStringValue(value, variable.type);
-		if (variable.slot)
+		if (undefined != variable.slot)
 		{
-			await this.setLocalVariableValue(variable, fValue);
+			return await this.setLocalVariableValue(variable, fValue);
 		}
 		else if (variable.parent)
 		{
 			let parent : DebugVariable = variable.parent;
 			if (parent.type == JdwpType.JT_ARRAY)
 			{
-				await this.setArrayVariableValue(parent, parseInt(variable.name), fValue);
+				return await this.setArrayVariableValue(parent, parseInt(variable.name), fValue);
 			}
 			else if (parent.type == JdwpType.JT_STRING)
 			{
-				await this.setStringVariableValue(parent, value);
+				return await this.setStringVariableValue(parent, value);
 			}
 			else
 			{
 				if ('boolean' == typeof(parent.realValue))
 				{
-					return ;
+					return false;
 				}
 
 				if (true === variable.static)
 				{
-					await this.setClassVariableValue(variable, parent.refTypeId, fValue);
+					return await this.setClassVariableValue(variable, parent.refTypeId, fValue);
 				}
 				else{
-					await this.setObjectVariableValue(variable, parent.realValue, fValue);
+					return await this.setObjectVariableValue(variable, parent.realValue, fValue);
 				}
 			}
 		}
+
+		return false;
 	}
 
 	protected async setVariableRequest(response: DebugProtocol.SetVariableResponse, args: DebugProtocol.SetVariableArguments, request?: DebugProtocol.Request): Promise<void>

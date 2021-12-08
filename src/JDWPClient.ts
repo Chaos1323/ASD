@@ -2,8 +2,43 @@ import * as net from "net";
 import { EventEmitter } from "events";
 import { setImmediate } from 'timers';
 import { PromiseCompleter } from "./utils";
-import { AR_GetValuesReply, AR_GetValuesRequest, AR_LengthReply, AR_LengthRequest, AR_SetValuesRequest, AT_NewInstanceReply, AT_NewInstanceRequest, CLR_VisibleClassesReply, CLR_VisibleClassesRequest, COR_ReflectedTypeReply, COR_ReflectedTypeRequest, CT_InvokeMethodReply, CT_InvokeMethodRequest, CT_NewInstanceReply, CT_NewInstanceRequest, CT_SetValuesRequest, CT_SuperclassReply, CT_SuperclassRequest, ER_ClearRequest, ER_SetReply, ER_SetRequest, JavaEvent, JavaModifier, M_BytecodesReply, M_BytecodesRequest, M_IsObsoleteReply, M_IsObsoleteRequest, M_LineTableReply, M_LineTableRequest, M_VariableTableReply, M_VariableTableRequest, M_VariableTableWithGenericReply, M_VariableTableWithGenericRequest, OR_DisableCollectionRequest, OR_EnableCollectionRequest, OR_GetValuesReply, OR_GetValuesRequest, OR_InvokeMethodReply, OR_InvokeMethodRequest, OR_IsCollectedReply, OR_IsCollectedRequest, OR_MonitorInfoReply, OR_MonitorInfoRequest, OR_ReferenceTypeReply, OR_ReferenceTypeRequest, OR_ReferringObjectsReply, OR_ReferringObjectsRequest, OR_SetValuesRequest, RT_ClassFileVersionReply, RT_ClassFileVersionRequest, RT_ClassLoaderReply, RT_ClassLoaderRequest, RT_ClassObjectReply, RT_ClassObjectRequest, RT_ConstantPoolReply, RT_ConstantPoolRequest, RT_FieldsReply, RT_FieldsRequest, RT_FieldsWithGenericReply, RT_FieldsWithGenericRequest, RT_GetValuesReply, RT_GetValuesRequest, RT_InstancesReply, RT_InstancesRequest, RT_InterfacesReply, RT_InterfacesRequest, RT_MethodsReply, RT_MethodsRequest, RT_MethodsWithGenericReply, RT_MethodsWithGenericRequest, RT_ModifiersReply, RT_ModifiersRequest, RT_NestedTypesReply, RT_NestedTypesRequest, RT_SignatureReply, RT_SignatureRequest, RT_SignatureWithGenericReply, RT_SignatureWithGenericRequest, RT_SourceDebugExtensionReply, RT_SourceDebugExtensionRequest, RT_SourceFileReply, RT_SourceFileRequest, RT_StatusReply, RT_StatusRequest, SF_GetValuesReply, SF_GetValuesRequest, SF_PopFramesRequest, SF_SetValuesRequest, SF_ThisObjectReply, SF_ThisObjectRequest, SR_ValueReply, SR_ValueRequest, TGR_ChildrenReply, TGR_ChildrenRequest, TGR_NameReply, TGR_NameRequest, TGR_ParentReply, TGR_ParentRequest, TR_CurrentContendedMonitorReply, TR_CurrentContendedMonitorRequest, TR_ForceEarlyReturnRequest, TR_FrameCountReply, TR_FrameCountRequest, TR_FramesReply, TR_FramesRequest, TR_InterruptRequest, TR_NameReply, TR_NameRequest, TR_OwnedMonitorsReply, TR_OwnedMonitorsRequest, TR_OwnedMonitorsStackDepthInfoReply, TR_OwnedMonitorsStackDepthInfoRequest, TR_ResumeRequest, TR_StatusReply, TR_StatusRequest, TR_StopRequest, TR_SuspendCountReply, TR_SuspendCountRequest, TR_SuspendRequest, TR_ThreadGroupReply, TR_ThreadGroupRequest, VM_AllClassesReply, VM_AllClassesWithGenericReply, VM_AllThreadsReply, VM_CapabilitiesNewReply, VM_CapabilitiesReply, VM_ClassesBySignatureReply, VM_ClassesBySignatureRequest, VM_ClassPathsReply, VM_CreateStringReply, VM_CreateStringRequest, VM_DisposeObjectsRequest, VM_ExitRequest, VM_IDSizesReply, VM_InstanceCountsReply, VM_InstanceCountsRequest, VM_RedefineClassesRequest, VM_SetDefaultStratumRequest, VM_TopLevelThreadGroupsReply, VM_VersionReply } from "./JDWPProtocol";
-import { fieldID, fieldIDSize, frameID, frameIDSize, interfaceID, javaLocation, javaValue, methodID, methodIDSize, objectIDSize, ReadBuffer, referenceTypeID, referenceTypeIDSize, taggedObjectID, threadGroupID, threadID, WriteBuffer } from "./buffer";
+import { AR_GetValuesReply, AR_GetValuesRequest, AR_LengthReply, AR_LengthRequest, 
+    AR_SetValuesRequest, AT_NewInstanceReply, AT_NewInstanceRequest, CLR_VisibleClassesReply, 
+    CLR_VisibleClassesRequest, COR_ReflectedTypeReply, COR_ReflectedTypeRequest, CT_InvokeMethodReply, 
+    CT_InvokeMethodRequest, CT_NewInstanceReply, CT_NewInstanceRequest, CT_SetValuesRequest, 
+    CT_SuperclassReply, CT_SuperclassRequest, ER_ClearRequest, ER_SetReply, ER_SetRequest, 
+    JavaEvent, JavaModifier, M_BytecodesReply, M_BytecodesRequest, M_IsObsoleteReply, 
+    M_IsObsoleteRequest, M_LineTableReply, M_LineTableRequest, M_VariableTableReply, 
+    M_VariableTableRequest, M_VariableTableWithGenericReply, M_VariableTableWithGenericRequest, 
+    OR_DisableCollectionRequest, OR_EnableCollectionRequest, OR_GetValuesReply, OR_GetValuesRequest, 
+    OR_InvokeMethodReply, OR_InvokeMethodRequest, OR_IsCollectedReply, OR_IsCollectedRequest, 
+    OR_MonitorInfoReply, OR_MonitorInfoRequest, OR_ReferenceTypeReply, OR_ReferenceTypeRequest, 
+    OR_ReferringObjectsReply, OR_ReferringObjectsRequest, OR_SetValuesRequest, RT_ClassFileVersionReply, 
+    RT_ClassFileVersionRequest, RT_ClassLoaderReply, RT_ClassLoaderRequest, RT_ClassObjectReply, 
+    RT_ClassObjectRequest, RT_ConstantPoolReply, RT_ConstantPoolRequest, RT_FieldsReply, 
+    RT_FieldsRequest, RT_FieldsWithGenericReply, RT_FieldsWithGenericRequest, RT_GetValuesReply, 
+    RT_GetValuesRequest, RT_InstancesReply, RT_InstancesRequest, RT_InterfacesReply, 
+    RT_InterfacesRequest, RT_MethodsReply, RT_MethodsRequest, RT_MethodsWithGenericReply, 
+    RT_MethodsWithGenericRequest, RT_ModifiersReply, RT_ModifiersRequest, RT_NestedTypesReply, 
+    RT_NestedTypesRequest, RT_SignatureReply, RT_SignatureRequest, RT_SignatureWithGenericReply, 
+    RT_SignatureWithGenericRequest, RT_SourceDebugExtensionReply, RT_SourceDebugExtensionRequest, 
+    RT_SourceFileReply, RT_SourceFileRequest, RT_StatusReply, RT_StatusRequest, SF_GetValuesReply, 
+    SF_GetValuesRequest, SF_PopFramesRequest, SF_SetValuesRequest, SF_ThisObjectReply, 
+    SF_ThisObjectRequest, SR_ValueReply, SR_ValueRequest, TGR_ChildrenReply, TGR_ChildrenRequest, 
+    TGR_NameReply, TGR_NameRequest, TGR_ParentReply, TGR_ParentRequest, TR_CurrentContendedMonitorReply, 
+    TR_CurrentContendedMonitorRequest, TR_ForceEarlyReturnRequest, TR_FrameCountReply, TR_FrameCountRequest, 
+    TR_FramesReply, TR_FramesRequest, TR_InterruptRequest, TR_NameReply, TR_NameRequest, TR_OwnedMonitorsReply, 
+    TR_OwnedMonitorsRequest, TR_OwnedMonitorsStackDepthInfoReply, TR_OwnedMonitorsStackDepthInfoRequest, 
+    TR_ResumeRequest, TR_StatusReply, TR_StatusRequest, TR_StopRequest, TR_SuspendCountReply, 
+    TR_SuspendCountRequest, TR_SuspendRequest, TR_ThreadGroupReply, TR_ThreadGroupRequest, 
+    VM_AllClassesReply, VM_AllClassesWithGenericReply, VM_AllThreadsReply, VM_CapabilitiesNewReply, 
+    VM_CapabilitiesReply, VM_ClassesBySignatureReply, VM_ClassesBySignatureRequest, VM_ClassPathsReply, 
+    VM_CreateStringReply, VM_CreateStringRequest, VM_DisposeObjectsRequest, VM_ExitRequest, VM_IDSizesReply, 
+    VM_InstanceCountsReply, VM_InstanceCountsRequest, VM_RedefineClassesRequest, VM_SetDefaultStratumRequest, 
+    VM_TopLevelThreadGroupsReply, VM_VersionReply } from "./JDWPProtocol";
+import { fieldID, fieldIDSize, frameID, frameIDSize, interfaceID, javaLocation, javaValue, methodID, 
+    methodIDSize, objectIDSize, ReadBuffer, referenceTypeID, referenceTypeIDSize, taggedObjectID, 
+    threadGroupID, threadID, WriteBuffer } from "./buffer";
 import { JdwpEventKind, JdwpModKind, JdwpTypeTag } from "./JDWPConstants";
 
 const JDWP_HEADERLEN : number = 11;

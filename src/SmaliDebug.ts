@@ -774,7 +774,8 @@ export class ASDebugSession extends LoggingDebugSession
 
 		if (frames) {
 			let stackFrames : StackFrame[] = [];
-			for (let i = 0; i < frames.frames; i++) {
+			length = frames.frames > length?length : frames.frames;
+			for (let i = 0; i < length; i++) {
 				let cls : ClassInfo | undefined = this.allcalsses_id.get(frames.locations[i].classId);
 				if (!cls)
 				{
@@ -806,7 +807,7 @@ export class ASDebugSession extends LoggingDebugSession
 					new Source(cls.getSourcePath(this.cwd)), line, 0));
 			}
 
-			response.body = { stackFrames, totalFrames: frames.frames };
+			response.body = { stackFrames, totalFrames: length };
 		}
 
 		this.sendResponse(response);

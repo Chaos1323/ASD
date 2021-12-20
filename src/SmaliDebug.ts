@@ -22,15 +22,15 @@ import {
 import { DebugProtocol } from 'vscode-debugprotocol';
 import { JDWPClient } from './JDWPClient';
 import { convertStringType, formatClsNameFromPath, formatStringValue, getObjectId, isPrimitiveType, log, logError } from './utils';
-import { arrayID, fieldID, frameID, frameIDSize, javaUntaggedValue, javaValue, methodID, objectID, 
-	referenceTypeID, setIDSizes, threadID } from './buffer';
+import { arrayID, fieldID, fieldIDSize, frameID, frameIDSize, javaUntaggedValue, javaValue, methodID, objectID, 
+	referenceTypeID, referenceTypeIDSize, setIDSizes, threadID } from './buffer';
 import { JdwpEventKind, JdwpModKind, JdwpStepDepth, JdwpStepSize, JdwpSuspendPolicy, 
 	JdwpType, JdwpTypeTag } from './JDWPConstants';
 import { AR_GetValuesReply, AR_LengthReply, ER_ClearRequest, ER_SetReply, ER_SetRequest, 
-	JavaEvent, JavaModifier, OR_GetValuesReply, OR_ReferenceTypeReply, RT_FieldsReply, RT_GetValuesReply, 
+	JavaEvent, JavaModifier, M_VariableTableWithGenericReply, OR_GetValuesReply, OR_ReferenceTypeReply, RT_FieldsReply, RT_GetValuesReply, 
 	RT_MethodsReply, RT_SignatureReply, 
 	SF_GetValuesReply, SR_ValueReply, TR_FramesReply, TR_NameReply, VM_AllClassesWithGenericReply, 
-	VM_AllThreadsReply, VM_CreateStringReply, VM_IDSizesReply } from './JDWPProtocol';
+	VM_AllThreadsReply, VM_CreateStringReply, VM_IDSizesReply, VM_VersionReply } from './JDWPProtocol';
 import { AdbClient } from './AdbClient';
 import { BreakpointStatus } from './enums';
 import { ThreadFrameManager } from './threadFrame';
@@ -195,6 +195,8 @@ export class ASDebugSession extends LoggingDebugSession
 		response.body.supportsSetVariable = true;
 		//support the 'restartFrame' request.
 		response.body.supportsRestartFrame = true;
+		//support the data access and modify request
+        response.body.supportsDataBreakpoints = true;
 
 		this.sendResponse(response);
 
@@ -209,6 +211,39 @@ export class ASDebugSession extends LoggingDebugSession
 		await this.client.stop();
 		super.disconnectRequest(response, args);
 		log("DisconnectResponse", response);
+	}
+
+	private async getLocalFirstFlag() : Promise<boolean | undefined>
+	{
+		let cls : ClassInfo | undefined = this.allclasses_signature['Ljava/lang/Integer;']
+		let mth : MethodInfo | undefined = await this.getMethodFromName('<init>(I)V' , cls);
+		if (mth)
+		{
+			let reply : M_VariableTableWithGenericReply | undefined = await this.client.M_VariableTableWithGeneric({
+				"refType" : cls.typeID,
+				"methodId" : mth.methodID,
+			});
+	
+			if (reply)
+			{
+				for (let i = 0; i < reply.count; i++)
+				{
+					if ('this' == reply.names[i])
+					{
+						if (reply.slots[i] == 0)
+						{
+							return false;
+						}
+						else
+						{
+							return true;
+						}
+					}
+				}
+			}
+		}
+
+		return undefined;
 	}
 
 	protected async launchRequest(response: DebugProtocol.LaunchResponse, args: SmaliLaunchArguments & DebugProtocol.LaunchRequestArguments, request?: DebugProtocol.Request): Promise<void>
@@ -300,7 +335,13 @@ export class ASDebugSession extends LoggingDebugSession
 		this.client.start().then(
 			async() => {
 				//get version
-				await this.client.VM_Version();
+				let version : VM_VersionReply | undefined = await this.client.VM_Version();
+				if (!version)
+				{
+					this.errorResponse(response, 'cannot get vm version');
+				}
+
+				log("VM_Version", version);
 
 				//suspend vm
 				await this.client.VM_Suspend();
@@ -364,6 +405,13 @@ export class ASDebugSession extends LoggingDebugSession
 					}
 				}
 
+				//get flags
+				let localFirst : boolean | undefined = await this.getLocalFirstFlag();
+				if (undefined != localFirst)
+				{
+					log('setLocalFirstFlag', localFirst);
+					this.smali.setLocalFirst(localFirst);
+				}
 				//resume vm
 				this.client.VM_Resume();
 
@@ -852,6 +900,7 @@ export class ASDebugSession extends LoggingDebugSession
 		this.frameMgr.addFrameVariable(args.frameId, localVar);
 
 		let regs : SmaliLocalReg[] | undefined = this.smali.getLocalRegs(frame.clsfile, frame.mthName, Number(frame.offset));
+		regs?.sort((a, b) => a.slot - b.slot);
 		for (let i = 0; regs && i < regs.length; i++) {
 			let type : JdwpType = convertStringType(regs[i].type);
 			let slotVar: DebugVariable = {
@@ -877,6 +926,7 @@ export class ASDebugSession extends LoggingDebugSession
 		scopes.push(new Scope("Local", localVar.id, false));
 		response.body = { scopes };
 		this.sendResponse(response);
+		log("getLocalRegs", regs);
 		log("ScopesResponse", response);
 	}
 
@@ -899,7 +949,7 @@ export class ASDebugSession extends LoggingDebugSession
 		for (let i = 0; i < variable.children.length; i++)
 		{
 			let child : DebugVariable = variable.children[i];
-			if (!child.slot)
+			if (undefined == child.slot)
 			{
 				return `local variable ${variable.children[i].name} slot undefined. `;
 			}
@@ -1005,30 +1055,34 @@ export class ASDebugSession extends LoggingDebugSession
 						if (JdwpType.JT_ARRAY == child.orignalValue.tag ||
 							JdwpType.JT_OBJECT == child.orignalValue.tag) {
 							//get refid
-							let reply : OR_ReferenceTypeReply | undefined = await this.client.OR_ReferenceType(
-								{
-									"object": child.orignalValue.value.A ? child.orignalValue.value.A : (child.orignalValue.value.L ? child.orignalValue.value.L : 0),
-								}
-							);
-							if (reply) {
-								child.refTypeId = reply.typeID;
-								let reply2 : RT_SignatureReply | undefined = await this.client.RT_Signature({
-									"refType": reply.typeID,
-								});
-								if (reply2) {
-									child.realType = reply2.signature;
-								}
-							}
-
-							if (JdwpType.JT_ARRAY == child.orignalValue.tag) {
-								child.size = 0;
-								let reply : AR_LengthReply | undefined = await this.client.AR_Length(
+							let obj : objectID | undefined = (undefined != child.orignalValue.value.A) ? child.orignalValue.value.A : (undefined != child.orignalValue.value.L ? child.orignalValue.value.L : undefined);
+							if (undefined != obj)
+							{
+								let reply : OR_ReferenceTypeReply | undefined = await this.client.OR_ReferenceType(
 									{
-										"arrayObject": child.orignalValue.value.A ? child.orignalValue.value.A : 0,
+										"object": obj,
 									}
 								);
 								if (reply) {
-									child.size = reply.arrayLength;
+									child.refTypeId = reply.typeID;
+									let reply2 : RT_SignatureReply | undefined = await this.client.RT_Signature({
+										"refType": reply.typeID,
+									});
+									if (reply2) {
+										child.realType = reply2.signature;
+									}
+								}
+	
+								if (JdwpType.JT_ARRAY == child.orignalValue.tag) {
+									child.size = 0;
+									let reply : AR_LengthReply | undefined = await this.client.AR_Length(
+										{
+											"arrayObject": child.orignalValue.value.A ? child.orignalValue.value.A : 0,
+										}
+									);
+									if (reply) {
+										child.size = reply.arrayLength;
+									}
 								}
 							}
 						}
@@ -1607,5 +1661,76 @@ export class ASDebugSession extends LoggingDebugSession
 		}
 		
 		log("EvaluateResponse", response);
+	}
+
+	protected dataBreakpointInfoRequest(response: DebugProtocol.DataBreakpointInfoResponse, args: DebugProtocol.DataBreakpointInfoArguments, request?: DebugProtocol.Request): void
+	{
+		response.body = response.body || {};
+		response.body.description = 'just support object field';
+		if (undefined != args.variablesReference)
+		{
+			let variable : DebugVariable | undefined = this.frameMgr.getVariableFromId(args.variablesReference);
+			if (variable && (variable.refTypeId || variable.realValue) && 
+				variable.children)
+			{
+				for (let i = 0; i < variable.children.length; i++)
+				{
+					let fieldId : fieldID | undefined = variable.children[i].fieldId;
+					if (args.name == variable.children[i].name && 
+						undefined != fieldId)
+					{
+						response.body.dataId = fieldId.toString() + '@';
+						if (true === variable.static) {
+							response.body.dataId += variable.refTypeId.toString();
+							response.body.description = variable.name + '.' + args.name;
+						}
+						else {
+							response.body.dataId += variable.realValue.toString();
+							response.body.description =  variable.realValue.toString() + '.' + args.name + '@' + variable.realType;
+						}
+
+						response.body.accessTypes = [];
+						response.body.accessTypes.push('read');
+						response.body.accessTypes.push('write');
+						break;
+					}
+				}
+			}
+		}
+
+		this.sendResponse(response);
+	}
+
+    protected async setDataBreakpointsRequest(response: DebugProtocol.SetDataBreakpointsResponse, args: DebugProtocol.SetDataBreakpointsArguments, request?: DebugProtocol.Request): Promise<void>
+	{
+		if (args.breakpoints) {
+			for (let i = 0; i < args.breakpoints.length; i++){
+				let breakpoint : DebugProtocol.DataBreakpoint = args.breakpoints[i];
+				let modifiers: JavaModifier[] = [];
+				let fieldId : string = breakpoint.dataId.substring(0, breakpoint.dataId.indexOf('@'));
+				let typeId : string = breakpoint.dataId.substring(breakpoint.dataId.indexOf('@') + 1);
+				modifiers.push({
+					"modKind" : JdwpModKind.MK_FIELD_ONLY,
+					"declaring" : referenceTypeIDSize == 8?BigInt(typeId):Number(typeId),
+					"fieldId" : fieldIDSize == 8?BigInt(fieldId):Number(fieldId),
+				});
+
+				if (breakpoint.hitCondition) {
+					modifiers.push({
+						"modKind": JdwpModKind.MK_COUNT,
+						"count": parseInt(breakpoint.hitCondition),
+					});
+				}
+				let reply = await this.client.ER_Set({
+					"eventKind": 'read' == breakpoint.accessType?JdwpEventKind.EK_FIELD_ACCESS:JdwpEventKind.EK_FIELD_MODIFICATION,
+					"suspendPolicy": JdwpSuspendPolicy.SP_EVENT_THREAD,
+					"modifiers": modifiers,
+				});
+				if (reply) {
+				}
+			}
+		}
+
+		this.sendResponse(response);
 	}
 }

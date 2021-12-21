@@ -8,6 +8,7 @@ Android Smali bytecode Debugger
  - Line breakpoints
  - Display variables
  - Modify variable's value
+ - field access or modify breakpoints
 
 ## Requirements
 
@@ -52,9 +53,6 @@ Android Smali bytecode Debugger
  - implement the evaluate function totally
  - make the array value to display better
  - add the unit-test suite
- - support class-type breakpoint
- - support function-type breakpoint
- - support watch breakpoint
  - support conditional breakpoint
 
 ## Other

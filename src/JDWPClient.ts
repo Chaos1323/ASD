@@ -88,7 +88,7 @@ export class JDWPClient extends EventEmitter
         return completer.promise;
     }
 
-    protected handlePkt(data : Buffer) : void
+    protected async handlePkt(data : Buffer) : Promise<void>
     {
         const resolveres = (id : number, response : Buffer) =>
         {
@@ -129,7 +129,7 @@ export class JDWPClient extends EventEmitter
                     resolveres(id, response);
                 }
                 else{
-                    this.E_Composite(response);
+                    await this.E_Composite(response);
                 }
 
                 if (this.replyBuffer.length < JDWP_HEADERLEN)
@@ -2328,7 +2328,7 @@ export class JDWPClient extends EventEmitter
                             "location" : response.readLocation(),
                         });
 
-                        this.ER_Clear({
+                        await this.ER_Clear({
                             "eventKind" : JdwpEventKind.EK_SINGLE_STEP, 
                             "requestID" : requestID,
                         });

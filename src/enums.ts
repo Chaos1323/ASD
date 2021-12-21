@@ -6,6 +6,13 @@ export enum BreakpointStatus
     BS_UNSET,
 };
 
+export enum DataBreakpointAccessType
+{
+    DBA_READ,
+    DBA_WRITE,
+    DBA_READWRITE,
+};
+
 export enum DexInsnType
 {
     DIT_NONE,
@@ -46,4 +53,5 @@ export enum DexInsnType
     DIT_MACOR_PACKED_SWITCH_END,
     DIT_MACOR_SPARSE_SWITCH_END,
     DIT_MACOR_LABEL,
+    DIT_MACOR_CATCH,
 };

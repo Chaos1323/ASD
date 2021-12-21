@@ -1,7 +1,7 @@
 import * as os from 'os';
 import * as path from 'path';
 import { Handles, ClassInfo, DebugBreakPoint, MethodInfo, SmaliLaunchArguments, 
-	JavaFrame, DebugVariable, SmaliLineInfo, SmaliLocalReg } from './interfaces_classes'
+	JavaFrame, DebugVariable, SmaliLineInfo, SmaliLocalReg, DataBreakPoint } from './interfaces_classes'
 import {
 	InitializedEvent,
 	logger,
@@ -23,6 +23,7 @@ import { DebugProtocol } from 'vscode-debugprotocol';
 import { JDWPClient } from './JDWPClient';
 import { convertStringType, formatClsNameFromPath, formatStringValue, getObjectId, isPrimitiveType, log, logError } from './utils';
 import { arrayID, fieldID, fieldIDSize, frameID, frameIDSize, javaUntaggedValue, javaValue, methodID, objectID, 
+	objectIDSize, 
 	referenceTypeID, referenceTypeIDSize, setIDSizes, threadID } from './buffer';
 import { JdwpEventKind, JdwpModKind, JdwpStepDepth, JdwpStepSize, JdwpSuspendPolicy, 
 	JdwpType, JdwpTypeTag } from './JDWPConstants';
@@ -32,7 +33,7 @@ import { AR_GetValuesReply, AR_LengthReply, ER_ClearRequest, ER_SetReply, ER_Set
 	SF_GetValuesReply, SR_ValueReply, TR_FramesReply, TR_NameReply, VM_AllClassesWithGenericReply, 
 	VM_AllThreadsReply, VM_CreateStringReply, VM_IDSizesReply, VM_VersionReply } from './JDWPProtocol';
 import { AdbClient } from './AdbClient';
-import { BreakpointStatus } from './enums';
+import { BreakpointStatus, DataBreakpointAccessType } from './enums';
 import { ThreadFrameManager } from './threadFrame';
 import { SmaliParser } from './SmaliParser';
 
@@ -47,7 +48,10 @@ export class ASDebugSession extends LoggingDebugSession
 	private allclasses_signature : { [key: string]: ClassInfo };
 	private allcalsses_id : Map<referenceTypeID, ClassInfo>;
 	private breakpoints : { [key: string]: DebugBreakPoint[] };
+	private databps : DataBreakPoint[];
 	private frameMgr : ThreadFrameManager;
+	private stepSeted : boolean;
+	private stepRequestId : number;
 
 	public constructor()
 	{
@@ -61,6 +65,9 @@ export class ASDebugSession extends LoggingDebugSession
 		this.allclasses_signature = {};
 		this.allcalsses_id = new Map();
 		this.breakpoints = {};
+		this.databps = [];
+		this.stepSeted = false;
+		this.stepRequestId = 0;
 
 		this.client.on("javaEvent", e => this.handleJavaEvent(e));
 	}
@@ -95,6 +102,17 @@ export class ASDebugSession extends LoggingDebugSession
 		return vsid;
 	}
 
+	private async clearStepBreakpoint() : Promise<void>
+	{
+		if (this.stepSeted)
+		{
+			await this.client.ER_Clear({
+				"eventKind" : JdwpEventKind.EK_SINGLE_STEP, 
+				"requestID" : this.stepRequestId,
+			});
+		}
+	}
+
 	protected handleJavaEvent(events : JavaEvent[]) : void
 	{
 		for (let i = 0; i < events.length; i++)
@@ -105,6 +123,7 @@ export class ASDebugSession extends LoggingDebugSession
 				case JdwpEventKind.EK_SINGLE_STEP:
 					if (thread)
 					{
+						this.stepSeted = false;
 						this.sendEvent(new StoppedEvent('step', this.getThreadVSId(thread)));
 					}
 					break;
@@ -156,6 +175,13 @@ export class ASDebugSession extends LoggingDebugSession
 					if (thread)
 					{
 						this.sendEvent(new StoppedEvent('method exit', this.getThreadVSId(thread)));
+					}
+					break;
+				case JdwpEventKind.EK_FIELD_ACCESS:
+				case JdwpEventKind.EK_FIELD_MODIFICATION:
+					if (thread)
+					{
+						this.sendEvent(new StoppedEvent('databreakpoint', this.getThreadVSId(thread)));
 					}
 					break;
 				case JdwpEventKind.EK_VM_DEATH:
@@ -524,7 +550,7 @@ export class ASDebugSession extends LoggingDebugSession
 		}
 
 		return {
-			"id" : breakpoint.line,
+			"id" : breakpoint.requestId,
 			"verified" : reply?true:false,
 			"line" : breakpoint.line,
 			"source" : new Source(breakpoint.file.slice(breakpoint.file.lastIndexOf(path.sep) + 1), breakpoint.file),
@@ -583,7 +609,7 @@ export class ASDebugSession extends LoggingDebugSession
 						}
 
 						exist = BreakpointStatus.BS_SET == curBps[i].status?true:false;
-						addBps.splice(index);
+						addBps.splice(index, 1);
 					}
 				}
 
@@ -606,7 +632,7 @@ export class ASDebugSession extends LoggingDebugSession
 						new Breakpoint(false, curBps[i].line, 0, new Source(args.source.name ? args.source.name : file, curBps[i].file))));
 
 					//delete bp for list
-					curBps.splice(i--);
+					curBps.splice(i--, 1);
 				}
 			}
 
@@ -680,7 +706,7 @@ export class ASDebugSession extends LoggingDebugSession
 		log("PauseResponse", response);
 	}
 
-	protected continueRequest(response: DebugProtocol.ContinueResponse, args: DebugProtocol.ContinueArguments, request?: DebugProtocol.Request): void
+	protected async continueRequest(response: DebugProtocol.ContinueResponse, args: DebugProtocol.ContinueArguments, request?: DebugProtocol.Request): Promise<void>
 	{
 		log("ContinueRequest", args);
 		let thread : threadID | undefined = this.threadHandles.get(args.threadId);
@@ -690,12 +716,14 @@ export class ASDebugSession extends LoggingDebugSession
 			return;
 		}
 
-		this.client.TR_Resume({
+		await this.clearStepBreakpoint();
+
+		await this.client.TR_Resume({
 			"thread" : thread,
-		}).then(() => {
-			response.body = { allThreadsContinued : false };
+		});
+
+		response.body = { allThreadsContinued : false };
 			this.sendResponse(response);
-		}).catch((error) => this.errorResponse(response, `${error}`));
 
 		this.frameMgr.removeThreadFrames(args.threadId);
 		log("ContinueResponse", response);
@@ -710,12 +738,20 @@ export class ASDebugSession extends LoggingDebugSession
 			"depth" : stepDepth,
 		};
 
+		await this.clearStepBreakpoint();
+
 		let mods: JavaModifier[] = [stepmod];
-		await this.client.ER_Set({
-			"eventKind" : JdwpEventKind.EK_SINGLE_STEP,
-			"suspendPolicy" : JdwpSuspendPolicy.SP_EVENT_THREAD,
-			"modifiers" : mods,
+		let reply : ER_SetReply | undefined = await this.client.ER_Set({
+			"eventKind": JdwpEventKind.EK_SINGLE_STEP,
+			"suspendPolicy": JdwpSuspendPolicy.SP_EVENT_THREAD,
+			"modifiers": mods,
 		});
+
+		if (reply)
+		{
+			this.stepSeted = true;
+			this.stepRequestId = reply.requestID;
+		}
 
 		await this.client.TR_Resume({
 			"thread": thread,
@@ -732,14 +768,13 @@ export class ASDebugSession extends LoggingDebugSession
 			return;
 		}
 
-		this.doStep(JdwpStepDepth.SD_OVER, thread).then(() => {
-			this.frameMgr.removeThreadFrames(args.threadId);
-			this.sendResponse(response);
-		}).catch((error) => this.errorResponse(response, `${error}`));
+		await this.doStep(JdwpStepDepth.SD_OVER, thread);
+		this.frameMgr.removeThreadFrames(args.threadId);
+		this.sendResponse(response);
 		log("NextResponse", response);
 	}
 
-	protected stepInRequest(response: DebugProtocol.StepInResponse, args: DebugProtocol.StepInArguments, request?: DebugProtocol.Request): void
+	protected async stepInRequest(response: DebugProtocol.StepInResponse, args: DebugProtocol.StepInArguments, request?: DebugProtocol.Request): Promise<void>
 	{
 		log("StepInRequest", args);
 		let thread : threadID | undefined = this.threadHandles.get(args.threadId);
@@ -749,14 +784,13 @@ export class ASDebugSession extends LoggingDebugSession
 			return;
 		}
 
-		this.doStep(JdwpStepDepth.SD_INTO, thread).then(() => {
-			this.frameMgr.removeThreadFrames(args.threadId);
-			this.sendResponse(response);
-		}).catch((error) => this.errorResponse(response, `${error}`));
+		await this.doStep(JdwpStepDepth.SD_INTO, thread);
+		this.frameMgr.removeThreadFrames(args.threadId);
+		this.sendResponse(response);
 		log("StepInResponse", response);
 	}
 
-	protected stepOutRequest(response: DebugProtocol.StepOutResponse, args: DebugProtocol.StepOutArguments, request?: DebugProtocol.Request): void
+	protected async stepOutRequest(response: DebugProtocol.StepOutResponse, args: DebugProtocol.StepOutArguments, request?: DebugProtocol.Request): Promise<void>
 	{
 		log("StepOutRequest", args);
 		let thread : threadID | undefined = this.threadHandles.get(args.threadId);
@@ -766,10 +800,9 @@ export class ASDebugSession extends LoggingDebugSession
 			return;
 		}
 
-		this.doStep(JdwpStepDepth.SD_OUT, thread).then(() => {
-			this.frameMgr.removeThreadFrames(args.threadId);
-			this.sendResponse(response);
-		}).catch((error) => this.errorResponse(response, `${error}`));
+		await this.doStep(JdwpStepDepth.SD_OUT, thread);
+		this.frameMgr.removeThreadFrames(args.threadId);
+		this.sendResponse(response);
 		log("StepOutResponse", response);
 	}
 
@@ -785,7 +818,7 @@ export class ASDebugSession extends LoggingDebugSession
 		});
 	}
 
-	protected restartFrameRequest(response: DebugProtocol.RestartFrameResponse, args: DebugProtocol.RestartFrameArguments, request?: DebugProtocol.Request): void
+	protected async restartFrameRequest(response: DebugProtocol.RestartFrameResponse, args: DebugProtocol.RestartFrameArguments, request?: DebugProtocol.Request): Promise<void>
 	{
 		log("RestartFrameRequest", args);
 		let frame : JavaFrame | undefined = this.frameMgr.getFrameFromId(args.frameId);
@@ -794,10 +827,9 @@ export class ASDebugSession extends LoggingDebugSession
 			this.errorResponse(response, `No frame with id ${args.frameId}`);
 			return;
 		}
-		
-		this.popFrameAndResume(frame.thread, frame.frameId).then(() => {
-			this.sendResponse(response);
-		}).catch((error) => this.errorResponse(response, `${error}`));
+
+		await this.popFrameAndResume(frame.thread, frame.frameId);
+		this.sendResponse(response);
 		log("RestartFrameResponse", response);
 	}
 
@@ -1065,11 +1097,19 @@ export class ASDebugSession extends LoggingDebugSession
 								);
 								if (reply) {
 									child.refTypeId = reply.typeID;
-									let reply2 : RT_SignatureReply | undefined = await this.client.RT_Signature({
-										"refType": reply.typeID,
-									});
-									if (reply2) {
-										child.realType = reply2.signature;
+									let cls : ClassInfo | undefined = this.allcalsses_id.get(reply.typeID);
+									if (!cls)
+									{
+										let reply2 : RT_SignatureReply | undefined = await this.client.RT_Signature({
+											"refType": reply.typeID,
+										});
+										if (reply2) {
+											child.realType = reply2.signature;
+										}
+									}
+									else
+									{
+										child.realType = cls.signature;
 									}
 								}
 	
@@ -1665,6 +1705,7 @@ export class ASDebugSession extends LoggingDebugSession
 
 	protected dataBreakpointInfoRequest(response: DebugProtocol.DataBreakpointInfoResponse, args: DebugProtocol.DataBreakpointInfoArguments, request?: DebugProtocol.Request): void
 	{
+		log("dataBreakpointInfoRequest", args);
 		response.body = response.body || {};
 		response.body.description = 'just support object field';
 		if (undefined != args.variablesReference)
@@ -1679,14 +1720,13 @@ export class ASDebugSession extends LoggingDebugSession
 					if (args.name == variable.children[i].name && 
 						undefined != fieldId)
 					{
-						response.body.dataId = fieldId.toString() + '@';
+						response.body.dataId = fieldId.toString() + '@' + variable.refTypeId.toString();
 						if (true === variable.static) {
-							response.body.dataId += variable.refTypeId.toString();
 							response.body.description = variable.name + '.' + args.name;
 						}
 						else {
-							response.body.dataId += variable.realValue.toString();
-							response.body.description =  variable.realValue.toString() + '.' + args.name + '@' + variable.realType;
+							response.body.dataId += '@' + variable.realValue.toString();
+							response.body.description =  variable.realValue.toString(16) + '.' + args.name + '@' + variable.realType;
 						}
 
 						response.body.accessTypes = [];
@@ -1699,38 +1739,117 @@ export class ASDebugSession extends LoggingDebugSession
 		}
 
 		this.sendResponse(response);
+		log("dataBreakpointInfoRequest", response);
 	}
 
     protected async setDataBreakpointsRequest(response: DebugProtocol.SetDataBreakpointsResponse, args: DebugProtocol.SetDataBreakpointsArguments, request?: DebugProtocol.Request): Promise<void>
 	{
+		log("setDataBreakpointsRequest", args);
+		let newDataBps : DataBreakPoint[] = [];
+		let setBps : DebugProtocol.Breakpoint[] = [];
 		if (args.breakpoints) {
 			for (let i = 0; i < args.breakpoints.length; i++){
-				let breakpoint : DebugProtocol.DataBreakpoint = args.breakpoints[i];
-				let modifiers: JavaModifier[] = [];
-				let fieldId : string = breakpoint.dataId.substring(0, breakpoint.dataId.indexOf('@'));
-				let typeId : string = breakpoint.dataId.substring(breakpoint.dataId.indexOf('@') + 1);
-				modifiers.push({
-					"modKind" : JdwpModKind.MK_FIELD_ONLY,
-					"declaring" : referenceTypeIDSize == 8?BigInt(typeId):Number(typeId),
-					"fieldId" : fieldIDSize == 8?BigInt(fieldId):Number(fieldId),
-				});
+				let exist : boolean = false;
+				let breakpoint: DebugProtocol.DataBreakpoint = args.breakpoints[i];
+				let hitCondition : number = breakpoint.hitCondition?parseInt(breakpoint.hitCondition):0;
+				let accessType : DataBreakpointAccessType = 
+					'read' == breakpoint.accessType?DataBreakpointAccessType.DBA_READ:DataBreakpointAccessType.DBA_WRITE;
+				let eventKind : JdwpEventKind = accessType == DataBreakpointAccessType.DBA_READ?
+					JdwpEventKind.EK_FIELD_ACCESS : JdwpEventKind.EK_FIELD_MODIFICATION;
+				let newBp : DataBreakPoint = {
+					"id" : breakpoint.dataId,
+					"hitCount" : hitCondition,
+					"accessType" : accessType,
+					"requestId" : 0,
+					"status" : BreakpointStatus.BS_SET,
+				};
 
-				if (breakpoint.hitCondition) {
-					modifiers.push({
-						"modKind": JdwpModKind.MK_COUNT,
-						"count": parseInt(breakpoint.hitCondition),
-					});
+				let retBp : DebugProtocol.Breakpoint = 
+				{
+					"verified" : false,
+				};
+
+				for (let j = 0; j < this.databps.length; j++)
+				{
+					if (breakpoint.dataId == this.databps[j].id && 
+						accessType == this.databps[j].accessType)
+					{
+						if (hitCondition != this.databps[j].hitCount)
+						{
+							await this.client.ER_Clear({
+								"eventKind" : eventKind,
+								"requestID" : this.databps[j].requestId,
+							});
+						}
+						else
+						{
+							newBp.requestId = this.databps[j].requestId;
+							retBp.verified = true;
+							exist = true;
+						}
+						
+						this.databps.splice(j, 1);
+						break;
+					}
 				}
-				let reply = await this.client.ER_Set({
-					"eventKind": 'read' == breakpoint.accessType?JdwpEventKind.EK_FIELD_ACCESS:JdwpEventKind.EK_FIELD_MODIFICATION,
-					"suspendPolicy": JdwpSuspendPolicy.SP_EVENT_THREAD,
-					"modifiers": modifiers,
-				});
-				if (reply) {
+
+				if (!exist)
+				{
+					let modifiers: JavaModifier[] = [];
+					let tmp: string[] = breakpoint.dataId.split("@");
+					if (tmp.length == 2 || tmp.length == 3) {
+						let fieldId: string = tmp[0];
+						let typeId: string = tmp[1];
+						let objId : string = (tmp.length == 3)?tmp[2]:'';
+						modifiers.push({
+							"modKind": JdwpModKind.MK_FIELD_ONLY,
+							"declaring": referenceTypeIDSize == 8 ? BigInt(typeId) : Number(typeId),
+							"fieldId": fieldIDSize == 8 ? BigInt(fieldId) : Number(fieldId),
+						});
+
+						if (breakpoint.hitCondition) {
+							modifiers.push({
+								"modKind": JdwpModKind.MK_COUNT,
+								"count": hitCondition,
+							});
+						}
+
+						if ('' != objId)
+						{
+							modifiers.push({
+								"modKind": JdwpModKind.MK_INSTANCE_ONLY,
+								"instance": objectIDSize == 8 ? BigInt(objId) : Number(objId),
+							});
+						}
+
+						let reply = await this.client.ER_Set({
+							"eventKind": eventKind,
+							"suspendPolicy": JdwpSuspendPolicy.SP_EVENT_THREAD,
+							"modifiers": modifiers,
+						});
+						if (reply) {
+							newBp.requestId = reply.requestID;
+							retBp.verified = true;
+						}
+					}
 				}
+
+				newDataBps.push(newBp);
+				setBps.push(retBp);
 			}
 		}
 
+		for (let i = 0; i < this.databps.length; i++){
+			await this.client.ER_Clear({
+				"eventKind" : this.databps[i].accessType == DataBreakpointAccessType.DBA_READ?
+									JdwpEventKind.EK_FIELD_ACCESS : JdwpEventKind.EK_FIELD_MODIFICATION,
+				"requestID" : this.databps[i].requestId,
+			});
+		}
+
+		this.databps = newDataBps;
+		response.body = { breakpoints : setBps };
 		this.sendResponse(response);
+		log("setDataBreakpointsRequest", response);
 	}
 }

@@ -129,7 +129,7 @@ class ClsDebugInfo
 class Region
 {
     public name : string;
-    public aliasName : string;
+    public aliasName : string[];
     public start : number;
     public end : number;
     public done : boolean;
@@ -147,7 +147,8 @@ class Region
     constructor(name : string, start : number)
     {
         this.name = name;
-        this.aliasName = name;
+        this.aliasName = [];
+        this.aliasName.push(name);
         this.start = start;
         this.end = start;
         this.unParsedRegs = [];
@@ -612,6 +613,7 @@ export class SmaliParser
                 //parse instructions
                 let lastOpcode : DexInsnType = DexInsnType.DIT_NOP;
                 let updateParams : boolean = false;
+                mth.offsets = [];
                 for (let i = mth.start + 1; i < lines.length - 1; i++)
                 {
                     if (/^\s*.end method\s*/.test(lines[i])) {
@@ -675,6 +677,7 @@ export class SmaliParser
                         case DexInsnType.DIT_GOTO:
                         case DexInsnType.DIT_IF:
                         case DexInsnType.DIT_SWITCH:
+                        case DexInsnType.DIT_MACOR_CATCH:
                             if (insnInfo.refType != region.name)
                             {
                                 region.addNext(insnInfo.refType);
@@ -689,6 +692,12 @@ export class SmaliParser
                                 region.addNext(name);
                                 region = new Region(name, tmpStart);
                             }
+                            else if (insnInfo.OpType == DexInsnType.DIT_MACOR_CATCH) {
+                                let tmpStart : number = offset + insnInfo.size;
+                                let name = "CATCH_" + tmpStart.toString();
+                                region.addNext(name);
+                                region = new Region(name, tmpStart);
+                            }
                             break;
                         case DexInsnType.DIT_MACOR_LABEL:
                             /**
@@ -697,9 +706,10 @@ export class SmaliParser
                              * xx
                              * :label2
                              */
-                            if (lastOpcode == DexInsnType.DIT_IF)
+                            if (lastOpcode == DexInsnType.DIT_IF || lastOpcode == DexInsnType.DIT_MACOR_LABEL ||
+                                lastOpcode == DexInsnType.DIT_MACOR_CATCH)
                             {
-                                region.aliasName = insnInfo.refType;
+                                region.aliasName.push(insnInfo.refType);
                                 break;
                             }
                             else if (lastOpcode != DexInsnType.DIT_GOTO && 
@@ -779,7 +789,7 @@ export class SmaliParser
                     for (let j = 0; j < data.length; j++) {
                         for (let k = 0; k < allBlocks.length; k++) {
                             if (data[j] == allBlocks[k].name) {
-                                allBlocks[k].aliasName = switch_Name[i];
+                                allBlocks[k].aliasName.push(switch_Name[i]);
                                 break;
                             }
                         }
@@ -797,6 +807,24 @@ export class SmaliParser
         return undefined;
     }
 
+    private isSameRegionName(name : string, block : Region) : boolean
+    {
+        if (block.name == name)
+        {
+            return true;
+        }
+
+        for (let i = 0; i < block.aliasName.length; i++)
+        {
+            if (block.aliasName[i] == name)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private parseExecutePaths(blocks : Region[]) : void
     {
         for (let i = 0; i < blocks.length; i++)
@@ -805,7 +833,7 @@ export class SmaliParser
             {
                 for (let k = 0; k < blocks.length; k++)
                 {
-                    if (blocks[k].aliasName == blocks[i].next[j] || blocks[k].name == blocks[i].next[j])
+                    if (this.isSameRegionName(blocks[i].next[j], blocks[k]))
                     {
                         blocks[i].nextIndexs.push(k);
                         blocks[k].prevIndexs.push(i);
@@ -856,7 +884,7 @@ export class SmaliParser
 
     private isArrival(blocks : Region[], start : number, stop : number, level : number = 0) : boolean
     {
-        if (RegionLoopFlag.RLF_UNPARSE != blocks[start].loop)
+        if (start == stop && RegionLoopFlag.RLF_UNPARSE != blocks[start].loop)
         {
             return blocks[start].loop == RegionLoopFlag.RLF_LOOP;
         }
@@ -874,7 +902,6 @@ export class SmaliParser
                 if (start != stop)
                 {
                     blocks[stop].loopRetIndexs.push(start);
-                    blocks[stop].prevIndexs.splice(blocks[stop].prevIndexs.indexOf(start), 1);
                 }
                 res = true;
                 break;
@@ -918,18 +945,33 @@ export class SmaliParser
     {
         let regs : SmaliReg[] = [];
 
-        regs = regs.concat(blocks[index].outRegs);
+        regs = regs.concat(blocks[index].regs);
         for (let i = 0; i < blocks[index].loopRetIndexs.length; i++)
         {
             let blks : Region[] = this.traverse(blocks, index, blocks[index].loopRetIndexs[i]);
             blks = blks.concat(blocks[blocks[index].loopRetIndexs[i]]);
             for (let j = 0; j < blks.length; j++)
             {
-                regs = regs.concat(blks[j].outRegs);
+                regs = regs.concat(blks[j].regs);
             }
         }
 
         return regs;
+    }
+
+    private getLoopPointsNumber(blocks : Region[], index : number) : number
+    {
+        let ret : number = 0;
+        let block : Region = blocks[index];
+        for (let i = 0; i < block.prevIndexs.length; i++)
+        {
+            if (index < block.prevIndexs[i] && this.isArrival(blocks, index, block.prevIndexs[i]))
+            {
+                ret++;
+            }
+        }
+
+        return ret;
     }
 
     private analysisScope(blocks : Region[]) : SmaliReg[]
@@ -941,7 +983,7 @@ export class SmaliParser
         }
 
         this.parseExecutePaths(blocks);
-        if ("start" != blocks[0].aliasName)
+        if ("start" != blocks[0].name)
         {
             return regs;
         }
@@ -977,7 +1019,7 @@ export class SmaliParser
                     //process the regions on the loop path
                     //if all dependent regions has been processed,then get it's regs, 
                     //else just push the input regs
-                    if (nextBlock.prevIndexs.length - 1 != nextBlock.inRegs.length)
+                    if (nextBlock.prevIndexs.length - this.getLoopPointsNumber(blocks, block.nextIndexs[i]) - 1 != nextBlock.inRegs.length)
                     {
                         nextBlock.inRegs.push(block.outRegs);
                     }
@@ -990,8 +1032,20 @@ export class SmaliParser
                             inheritRegs = this.intersection(inheritRegs, nextBlock.inRegs[j]);
                         }
 
+                        //check is loop path inner
+                        let inner : boolean = true;
+                        for (let k = 0; k < nextBlock.prevIndexs.length; k++)
+                        {
+                            if (nextBlock.prevIndexs[k] > block.nextIndexs[i])
+                            {
+                                inner = false;
+                            }
+                        }
                         //excluse the loop path define regs
-                        this.exclusive(inheritRegs, this.getLoopPathDefRegs(blocks, block.nextIndexs[i]));
+                        if (!inner)
+                        {
+                            this.exclusive(inheritRegs, this.getLoopPathDefRegs(blocks, block.nextIndexs[i]));
+                        }
 
                         nextBlock.parseUnknownRegs(inheritRegs);
                         nextBlock.mergeRegs(inheritRegs);
@@ -1338,7 +1392,7 @@ export class SmaliParser
         }
 
         //new array
-        m = insn.match(/^\s+new-array\s+([vp0-9]+),\s*[vp0-9]+,\s*(\[[\[La-zA-Z0-9$_]+;)\s*/);
+        m = insn.match(/^\s+new-array\s+([vp0-9]+),\s*[vp0-9]+,\s*(\[[\[La-zA-Z0-9$_\/]+;)\s*/);
         if (m)
         {
             return {
@@ -1364,7 +1418,7 @@ export class SmaliParser
         }
 
         //check-cast
-        m = insn.match(/^\s+check-cast\s+([vp0-9]+),\s*([\[L]]+[a-zA-Z0-9$_]+;)\s*/);
+        m = insn.match(/^\s+check-cast\s+([vp0-9]+),\s*([\[L]+[a-zA-Z0-9$_\/]+;)\s*/);
         if (m)
         {
             return {
@@ -1614,7 +1668,7 @@ export class SmaliParser
             };
         }
 
-        //label
+        //.label
         m = insn.match(/^\s+(:[a-zA-Z0-9_]+)\s*/);
         if (m) {
             return {
@@ -1622,6 +1676,18 @@ export class SmaliParser
                 "defReg": '',
                 "refReg": '',
                 "refType": m[1],//label name
+                "size": 0,
+            };
+        }
+
+        //.catch
+        m = insn.match(/^\s*\.(catch|catchall)\b.+(:(catch|catchall)_[0-9a-b]+)\s*/);
+        if (m) {
+            return {
+                "OpType": DexInsnType.DIT_MACOR_CATCH,
+                "defReg": '',
+                "refReg": '',
+                "refType": m[2],
                 "size": 0,
             };
         }

@@ -1,7 +1,7 @@
 import { type } from "os";
 import path = require("path");
 import { fieldID, frameID, javaValue, methodID, objectID, referenceTypeID, threadID } from "./buffer";
-import { BreakpointStatus } from "./enums";
+import { BreakpointStatus, DataBreakpointAccessType } from "./enums";
 import { JdwpType, JdwpTypeTag } from "./JDWPConstants";
 import { getClassStatus, logError } from "./utils";
 
@@ -23,6 +23,15 @@ export interface DebugBreakPoint
     clsName : string;
     methodName : string;
     offset : bigint;
+    requestId : number;
+    status : BreakpointStatus;
+}
+
+export interface DataBreakPoint
+{
+    id : string;
+    accessType : DataBreakpointAccessType;
+    hitCount : number;
     requestId : number;
     status : BreakpointStatus;
 }

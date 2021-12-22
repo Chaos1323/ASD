@@ -110,6 +110,9 @@ export class ASDebugSession extends LoggingDebugSession
 				"eventKind" : JdwpEventKind.EK_SINGLE_STEP, 
 				"requestID" : this.stepRequestId,
 			});
+
+			this.stepSeted = false;
+			this.stepRequestId = 0;
 		}
 	}
 
@@ -239,10 +242,10 @@ export class ASDebugSession extends LoggingDebugSession
 		log("DisconnectResponse", response);
 	}
 
-	private async getLocalFirstFlag() : Promise<boolean | undefined>
+	private async getLocalFirstFlag(clsName : string, mthName : string) : Promise<boolean | undefined>
 	{
-		let cls : ClassInfo | undefined = this.allclasses_signature['Ljava/lang/Integer;']
-		let mth : MethodInfo | undefined = await this.getMethodFromName('<init>(I)V' , cls);
+		let cls : ClassInfo | undefined = this.allclasses_signature[clsName]
+		let mth : MethodInfo | undefined = await this.getMethodFromName(mthName, cls);
 		if (mth)
 		{
 			let reply : M_VariableTableWithGenericReply | undefined = await this.client.M_VariableTableWithGeneric({
@@ -432,7 +435,7 @@ export class ASDebugSession extends LoggingDebugSession
 				}
 
 				//get flags
-				let localFirst : boolean | undefined = await this.getLocalFirstFlag();
+				let localFirst : boolean | undefined = await this.getLocalFirstFlag('Ldalvik/system/BaseDexClassLoader;', 'addDexPath(Ljava/lang/String;)V');
 				if (undefined != localFirst)
 				{
 					log('setLocalFirstFlag', localFirst);

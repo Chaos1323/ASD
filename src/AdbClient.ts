@@ -119,12 +119,17 @@ export class AdbClient
 
     public static async launchApp(packageName : string) : Promise<string>
     {
-        const adb : LocalCommand = {
+        const stopAppCmd : LocalCommand = {
+            command : "adb",
+            args : ['-s', AdbClient.device_sid, 'shell', 'am', 'force-stop', packageName]
+        };
+        const launchAppCmd : LocalCommand = {
             command : "adb",
             args : ['-s', AdbClient.device_sid, 'shell', 'monkey', '-p', packageName, '1']
         };
 
-        const { stdout } =  await runCommand(adb);
+        await runCommand(stopAppCmd);
+        await runCommand(launchAppCmd);
         return this.getProcessIdByName(packageName);
     }
 

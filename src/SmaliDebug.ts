@@ -300,16 +300,6 @@ export class ASDebugSession extends LoggingDebugSession
 			return;
 		}
 
-		if (!args.mainActivity)
-		{
-			this.sendErrorResponse(
-				response,
-				2000,
-				'Failed to continue: The mainActivity attribute is missing in the debug configuration in launch.json'
-			);
-			return;
-		}
-
 		if (!args.deviceId)
 		{
 			this.sendErrorResponse(
@@ -345,7 +335,7 @@ export class ASDebugSession extends LoggingDebugSession
 		let pid : string = await AdbClient.getProcessIdByName(args.packageName);
 		if ("" == pid)
 		{
-			pid = await AdbClient.launchApp(args.packageName, args.mainActivity);
+			pid = await AdbClient.launchApp(args.packageName);
 			if ("" == pid) {
 				this.sendErrorResponse(
 					response,

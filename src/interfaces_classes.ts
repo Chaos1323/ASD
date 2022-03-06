@@ -8,7 +8,6 @@ import { getClassStatus, logError } from "./utils";
 export interface SmaliLaunchArguments
 {
     packageName? : string;
-    mainActivity? : string;
     deviceId? : string;
     workDir? : string;
     trace? : 'verbose' | 'trace' | 'info' | 'log' | 'warn' | 'error';

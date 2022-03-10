@@ -38,7 +38,6 @@ Android Smali bytecode Debugger
                 "request": "launch",
                 "name": "Smali Launch",
                 "packageName": "xxx.xxxxx",
-                "mainActivity": "xxx.xxxxx.MainActivity",
                 "deviceId": "xxxxxxx",
                 "workDir": "${workspaceFolder}"
             }
@@ -46,8 +45,7 @@ Android Smali bytecode Debugger
     }
 ```
    * the `packageName` : the apk package name
-   * the `mainActivity` : the apk entry class
-   * the `deviceId` : your device id which getted from the `adb devices` command
+   * the `deviceId` : your device id obtained from the `adb devices` command
 
 ## TO DO
  - implement the evaluate function totally

@@ -71,7 +71,6 @@
 					"launch": {
 						"required": [
 							"packageName",
-							"mainActivity",
 							"deviceId",
 							"workDir"
 						],
@@ -80,11 +79,6 @@
 								"type": "string",
 								"description": "Apk package name",
 								"default": ""
-							},
-							"mainActivity": {
-								"type": "string",
-								"description": "launch main activity",
-								"default": "MainActivity"
 							},
 							"deviceId": {
 								"type": "string",
@@ -104,11 +98,10 @@
 						"label": "Android Smali Launch",
 						"description": "Launch android app for debugging",
 						"body": {
-							"type": "smali",
+							"type": "ASD",
 							"request": "launch",
 							"name": "${1:Smali Launch}",
 							"packageName": "com.xxx.xxx",
-							"mainActivity": "com.xxx.xxx.MainActivity",
 							"deviceId": "select from the result of 'adb devices'",
 							"workDir": "^\"\\${workspaceFolder}\""
 						}

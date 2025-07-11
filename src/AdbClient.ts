@@ -117,19 +117,14 @@ export class AdbClient
         return processId;
     }
 
-    public static async launchApp(packageName : string) : Promise<string>
+    public static async launchApp(packageName : string, mainActivity : string) : Promise<string>
     {
-        const stopAppCmd : LocalCommand = {
+        const adb : LocalCommand = {
             command : "adb",
-            args : ['-s', AdbClient.device_sid, 'shell', 'am', 'force-stop', packageName]
-        };
-        const launchAppCmd : LocalCommand = {
-            command : "adb",
-            args : ['-s', AdbClient.device_sid, 'shell', 'monkey', '-p', packageName, '1']
+            args : ['-s', AdbClient.device_sid, 'shell', 'am', 'start', '-D', '-n', packageName + '/' + mainActivity]
         };
 
-        await runCommand(stopAppCmd);
-        await runCommand(launchAppCmd);
+        const { stdout } =  await runCommand(adb);
         return this.getProcessIdByName(packageName);
     }
 

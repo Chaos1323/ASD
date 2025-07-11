@@ -1,13 +1,16 @@
 import { type } from "os";
+import * as os from 'os';
 import path = require("path");
 import { fieldID, frameID, javaValue, methodID, objectID, referenceTypeID, threadID } from "./buffer";
 import { BreakpointStatus, DataBreakpointAccessType } from "./enums";
 import { JdwpType, JdwpTypeTag } from "./JDWPConstants";
-import { getClassStatus, logError } from "./utils";
+import { getClassStatus, logError, GetClsnameFromFile } from "./utils";
+import * as fs from 'fs';
 
 export interface SmaliLaunchArguments
 {
     packageName? : string;
+    mainActivity? : string;
     deviceId? : string;
     workDir? : string;
     trace? : 'verbose' | 'trace' | 'info' | 'log' | 'warn' | 'error';
@@ -129,12 +132,51 @@ export class ClassInfo
         return this.methods_id.size;
     }
 
-    public getSourcePath(rootDir: string): string {
-        if ("" == this.source) {
+    public async getSourcePath(rootDir: string): Promise<string> {
+        if ("" === this.source) {
             let src: string = this.signature.slice(0);
             src = src.replace(/[\/]/g, path.sep);
-            src = rootDir + src.slice(1, src.indexOf(';')) + ".smali";
-            this.source = src;
+            let filepath = "";
+
+            //check whether generated code
+            filepath = rootDir + src.slice(1, src.indexOf(';'));
+            filepath = filepath.slice(0, filepath.lastIndexOf(path.sep));
+            if (!fs.existsSync(filepath)) {
+                return "";
+            }
+
+            //get the letter count
+            let filename = src.slice(src.lastIndexOf(path.sep));
+            const letters = filename.match(/[a-zA-Z]/g);
+            let count: number = letters ? letters.length : 0;
+            let size = 2 << count;
+            for (let i = 0; i < size; i++) {
+                if (i > 10)
+                {
+                    logError("getSourcePath", "can't get filepath by clsname: " + this.signature);
+                    filepath = "";
+                    break;
+                }
+                //create file path
+                if (0 === i) {
+                    filepath = rootDir + src.slice(1, src.indexOf(';')) + ".smali";
+                }
+                else {
+                    filepath = rootDir + src.slice(1, src.indexOf(';')) + "." + i + ".smali";
+                }
+
+                if (!fs.existsSync(filepath))
+                {
+                    continue;
+                }
+
+                let cls = await GetClsnameFromFile(filepath);
+                if (cls === src) {
+                    break;
+                }
+            }
+
+            this.source = filepath;
         }
 
         return this.source;

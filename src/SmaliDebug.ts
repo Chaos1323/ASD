@@ -25,13 +25,14 @@ import { convertStringType, formatClsNameFromPath, formatStringValue, getObjectI
 import { arrayID, fieldID, fieldIDSize, frameID, frameIDSize, javaUntaggedValue, javaValue, methodID, objectID, 
 	objectIDSize, 
 	referenceTypeID, referenceTypeIDSize, setIDSizes, threadID } from './buffer';
-import { JdwpEventKind, JdwpModKind, JdwpStepDepth, JdwpStepSize, JdwpSuspendPolicy, 
+import { JdwpClassStatus, JdwpEventKind, JdwpModKind, JdwpStepDepth, JdwpStepSize, JdwpSuspendPolicy, 
 	JdwpType, JdwpTypeTag } from './JDWPConstants';
 import { AR_GetValuesReply, AR_LengthReply, ER_ClearRequest, ER_SetReply, ER_SetRequest, 
 	JavaEvent, JavaModifier, M_VariableTableWithGenericReply, OR_GetValuesReply, OR_ReferenceTypeReply, RT_FieldsReply, RT_GetValuesReply, 
 	RT_MethodsReply, RT_SignatureReply, 
+	RT_StatusReply, 
 	SF_GetValuesReply, SR_ValueReply, TR_FramesReply, TR_NameReply, VM_AllClassesWithGenericReply, 
-	VM_AllThreadsReply, VM_CreateStringReply, VM_IDSizesReply, VM_VersionReply } from './JDWPProtocol';
+	VM_AllThreadsReply, VM_ClassesBySignatureReply, VM_CreateStringReply, VM_IDSizesReply, VM_VersionReply } from './JDWPProtocol';
 import { AdbClient } from './AdbClient';
 import { BreakpointStatus, DataBreakpointAccessType } from './enums';
 import { ThreadFrameManager } from './threadFrame';
@@ -114,6 +115,60 @@ export class ASDebugSession extends LoggingDebugSession
 			this.stepSeted = false;
 			this.stepRequestId = 0;
 		}
+	}
+
+	private async getClsByRefTypeID(refid: referenceTypeID): Promise<ClassInfo | undefined> {
+		let cls: ClassInfo | undefined = this.allcalsses_id.get(refid);
+		if (!cls) {
+			//get signature
+			let reply: RT_SignatureReply | undefined = await this.client.RT_Signature({
+				"refType": refid,
+			});
+			if (!reply) {
+				return undefined
+			}
+
+			//get status
+			let status = JdwpClassStatus.CS_PREPARED;
+			let reply2: RT_StatusReply | undefined = await this.client.RT_Status({
+				"refType": refid,
+			});
+			if (!reply2) {
+				logError("getClsFromRefTypeID", `cannot get status from reftypeid ${refid}.`);
+			}
+			else
+			{
+				status = reply2.status
+			}
+
+			let newcls = new ClassInfo(reply.signature,
+				JdwpTypeTag.TT_CLASS, refid, status);
+			this.allclasses_signature[reply.signature] = newcls;
+			this.allcalsses_id.set(refid, newcls);
+			return newcls;
+		}
+
+		return cls;
+	}
+
+	private async getClsByRefTypeSignature(signature: string): Promise<ClassInfo | undefined> {
+		let cls: ClassInfo | undefined = this.allclasses_signature[signature];
+		if (!cls) {
+			//get signature
+			let reply: VM_ClassesBySignatureReply | undefined = await this.client.VM_ClassesBySignature({
+				"signature" : signature,
+			});
+			if (!reply || 0 === reply.classes) {
+				return undefined;
+			}
+
+			let newcls = new ClassInfo(signature, reply.refTypeTag[0], reply.typeID[0], reply.status[0]);
+			this.allclasses_signature[signature] = newcls;
+			this.allcalsses_id.set(reply.typeID[0], newcls);
+			return newcls;
+		}
+
+		return cls;
 	}
 
 	protected handleJavaEvent(events : JavaEvent[]) : void
@@ -244,7 +299,12 @@ export class ASDebugSession extends LoggingDebugSession
 
 	private async getLocalFirstFlag(clsName : string, mthName : string) : Promise<boolean | undefined>
 	{
-		let cls : ClassInfo | undefined = this.allclasses_signature[clsName]
+		let cls : ClassInfo | undefined = await this.getClsByRefTypeSignature(clsName);
+		if (!cls)
+		{
+			return undefined;
+		}
+
 		let mth : MethodInfo | undefined = await this.getMethodFromName(mthName, cls);
 		if (mth)
 		{
@@ -335,7 +395,16 @@ export class ASDebugSession extends LoggingDebugSession
 		let pid : string = await AdbClient.getProcessIdByName(args.packageName);
 		if ("" == pid)
 		{
-			pid = await AdbClient.launchApp(args.packageName);
+			if (!args.mainActivity) {
+				this.sendErrorResponse(
+					response,
+					2000,
+					'Failed to continue: The mainActivity attribute is missing in the debug configuration in launch.json'
+				);
+				return;
+			}
+
+			pid = await AdbClient.launchApp(args.packageName, args.mainActivity);
 			if ("" == pid) {
 				this.sendErrorResponse(
 					response,
@@ -534,6 +603,10 @@ export class ASDebugSession extends LoggingDebugSession
 					"modifiers": modifiers,
 				});
 			}
+			else
+			{
+				log("addSingleBreakPoint", `getMethodFromName failed:cls=${cls}\tmethodname=${breakpoint.methodName}`);
+			}
 
 			breakpoint.status = BreakpointStatus.BS_UNSET;
 			if (reply) {
@@ -562,7 +635,7 @@ export class ASDebugSession extends LoggingDebugSession
 
 		let addBps : DebugBreakPoint[] = [];
 		let breakpoints : DebugProtocol.Breakpoint[] = [];
-		let clsName : string = formatClsNameFromPath(this.cwd, file);
+		let clsName : string = await formatClsNameFromPath(this.cwd, file);
 
 		if (args.breakpoints) {
 			args.breakpoints.map((breakpoint) => {
@@ -579,7 +652,7 @@ export class ASDebugSession extends LoggingDebugSession
 			});
 		}
 
-		let cls : ClassInfo | undefined = this.allclasses_signature[clsName];
+		let cls : ClassInfo | undefined = await this.getClsByRefTypeSignature(clsName);
 		let curBps : DebugBreakPoint[] = this.breakpoints[clsName];
 		if (cls && curBps)
 		{
@@ -631,6 +704,10 @@ export class ASDebugSession extends LoggingDebugSession
 
 			curBps = curBps.concat(addBps);
 		}
+		else if (!cls)
+		{
+			log("setBreakPointsRequest", `get class info by signature=${clsName} failed.`);
+		}
 
 		for (let i = 0; i < addBps.length; i++)
 		{
@@ -639,6 +716,10 @@ export class ASDebugSession extends LoggingDebugSession
 			{
 				addBps[i].methodName = lineInfo.mth;
 				addBps[i].offset = lineInfo.offset;
+			}
+			else
+			{
+				log("setBreakPointsRequest", `getLineInfoByLine from file=${file} and line=${addBps[i].line} failed.`);
 			}
 
 			breakpoints.push(await this.addSingleBreakPoint(cls, addBps[i]));
@@ -849,12 +930,14 @@ export class ASDebugSession extends LoggingDebugSession
 			let stackFrames : StackFrame[] = [];
 			length = frames.frames > length?length : frames.frames;
 			for (let i = 0; i < length; i++) {
-				let cls : ClassInfo | undefined = this.allcalsses_id.get(frames.locations[i].classId);
+				let cls : ClassInfo | undefined = await this.getClsByRefTypeID(frames.locations[i].classId);
 				if (!cls)
 				{
 					logError("stackTraceRequest", `cannot get class from classid ${frames.locations[i].classId}.`);
 					continue;
 				}
+
+				let clsuri =await cls.getSourcePath(this.cwd);
 
 				let mth : MethodInfo | undefined = await this.getMethodFromId(frames.locations[i].methodId, cls);
 				if (!mth)
@@ -862,13 +945,14 @@ export class ASDebugSession extends LoggingDebugSession
 					continue;
 				}
 
+				log("stackTraceRequest", `get line info from ${clsuri} by cls=${cls.signature} method=${mth.protoType}.`);
 				//get the line info 
-				let lineInfo : SmaliLineInfo | undefined = this.smali.getLineInfoByOffset(cls.getSourcePath(this.cwd), mth.protoType, frames.locations[i].index);
+				let lineInfo : SmaliLineInfo | undefined = this.smali.getLineInfoByOffset(clsuri, mth.protoType, frames.locations[i].index);
 				let line : number = lineInfo?lineInfo.line:0;
 
 				const uniqueStackFrameId = this.frameMgr.addThreadFrame(args.threadId, {
 					"clsName" : cls.signature,
-					"clsfile" : cls.getSourcePath(this.cwd),
+					"clsfile" : clsuri,
 					"frameId" : frames.frameIds[i],
 					"handleID" : 0,
 					"line" : line,
@@ -877,7 +961,7 @@ export class ASDebugSession extends LoggingDebugSession
 					"thread" : thread,
 				});
 				stackFrames.push(new StackFrame(uniqueStackFrameId, cls.signature + "->" + mth.protoType, 
-					new Source(cls.getSourcePath(this.cwd)), line, 0));
+					new Source(clsuri), line, 0));
 			}
 
 			response.body = { stackFrames, totalFrames: length };
@@ -1081,7 +1165,7 @@ export class ASDebugSession extends LoggingDebugSession
 							JdwpType.JT_OBJECT == child.orignalValue.tag) {
 							//get refid
 							let obj : objectID | undefined = (undefined != child.orignalValue.value.A) ? child.orignalValue.value.A : (undefined != child.orignalValue.value.L ? child.orignalValue.value.L : undefined);
-							if (undefined != obj)
+							if (undefined != obj && 0 != obj)
 							{
 								let reply : OR_ReferenceTypeReply | undefined = await this.client.OR_ReferenceType(
 									{
@@ -1090,7 +1174,7 @@ export class ASDebugSession extends LoggingDebugSession
 								);
 								if (reply) {
 									child.refTypeId = reply.typeID;
-									let cls : ClassInfo | undefined = this.allcalsses_id.get(reply.typeID);
+									let cls : ClassInfo | undefined = await this.getClsByRefTypeID(reply.typeID);
 									if (!cls)
 									{
 										let reply2 : RT_SignatureReply | undefined = await this.client.RT_Signature({
@@ -1205,6 +1289,7 @@ export class ASDebugSession extends LoggingDebugSession
 					if (reply2)
 					{
 						child.refTypeId = reply2.typeID;
+						await this.getClsByRefTypeID(child.refTypeId);
 						child.realType = this.allcalsses_id.get(child.refTypeId)?.signature;
 					}
 				}				
@@ -1283,6 +1368,7 @@ export class ASDebugSession extends LoggingDebugSession
 		}
 
 		for (let i = 0; i < reply2.values.length; i++) {
+			await this.getClsByRefTypeSignature(normalSignatures[i]);
 			let child: DebugVariable = {
 				"id": 0,
 				"frameId": variable.frameId,
@@ -1329,6 +1415,7 @@ export class ASDebugSession extends LoggingDebugSession
 		}
 
 		for (let i = 0; i < reply3.values.length; i++) {
+			await this.getClsByRefTypeSignature(staticSignatures[i]);
 			let child: DebugVariable = {
 				"id": 0,
 				"frameId": variable.frameId,

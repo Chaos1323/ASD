@@ -4,6 +4,8 @@ import path = require('path');
 import { logger } from 'vscode-debugadapter/lib/logger';
 import { javaUntaggedValue, javaValue, objectID, objectIDSize } from './buffer';
 import { JdwpClassStatus, JdwpType } from './JDWPConstants';
+import * as fs from 'fs';
+import * as readline from 'readline';
 
 export class PromiseCompleter<T> {
 	public promise: Promise<T>;
@@ -23,9 +25,9 @@ export interface LocalCommand {
 	args: string[];
 }
 
-export async function runCommand(processCmd : LocalCommand) : Promise<{ err: cp.ExecException | null; stdout: string; stderr: string }>
+export async function runCommand(processCmd : LocalCommand) : Promise<{ err: cp.ExecFileException | null; stdout: string; stderr: string }>
 {
-    return await new Promise<{ err: cp.ExecException | null; stdout: string; stderr: string }>((resolve) => {
+    return await new Promise<{ err: cp.ExecFileException | null; stdout: string; stderr: string }>((resolve) => {
 		cp.execFile(processCmd.command, processCmd.args, (err, stdout, stderr) => {
 			resolve({ err, stdout, stderr });
 		});
@@ -92,12 +94,34 @@ export function getClassStatus(status: number): string {
 	return res;
 }
 
-export function formatClsNameFromPath(rootDir: string, fullPath: string): string {
-	let clsName: string = fullPath.slice(fullPath.indexOf(rootDir) + rootDir.length);
-	clsName = clsName.slice(0, clsName.lastIndexOf("."));
-	let re = new RegExp('[\\' + `${path.sep}` + ']', 'g');
-	clsName = "L" + clsName.replace(re, '/') + ";";
-	return clsName;
+export function GetClsnameFromFile(filepath: string): Promise<string> {
+	return new Promise((resolve) => {
+		let cls: string = "";
+		const readStream = fs.createReadStream(filepath);
+		const rl = readline.createInterface({
+			input: readStream,
+			crlfDelay: Infinity
+		});
+
+		rl.on('line', (line) => {
+			if (/^\s*\.class\s+.+\s*/.test(line)) {
+				const m = line.match(/^\s*\.class\s+([a-z\s]+)?\b(L[a-zA-Z0-9\/$_]+;)\s*/);
+				if (m) {
+					cls = m[2];
+					rl.close();
+				}
+			}
+		});
+
+		rl.on('close', () => {
+			readStream.close();
+			resolve(cls);
+		});
+	});
+}
+
+export function formatClsNameFromPath(rootDir: string, fullPath: string): Promise<string> {
+	return GetClsnameFromFile(fullPath);
 }
 
 export function isPrimitiveType(type : JdwpType) : boolean

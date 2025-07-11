@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import { DexInsnType } from './enums';
 import { SmaliLineInfo, SmaliLocalReg } from './interfaces_classes';
-import { logError } from './utils';
+import { log, logError } from './utils';
 
 const CLASS_LOOKUP_MAX_LINES : number = 10;
 
@@ -396,7 +396,7 @@ export class SmaliParser
         for (let i = line - 2; i > 0; i--)
         {
             allPos.push(offset);
-            const m = lines[i].match(/^\s*.method\s+[a-zA-Z\s]+\b(<?[a-zA-Z0-9_]+>?)(\([^\s]+)#?.*?\s*/);
+            const m = lines[i].match(/^\s*.method\s+[a-zA-Z\s]+\s+(<?[a-zA-Z0-9_]+>?)(\([^\s]+)#?.*?\s*/);
             if (m)
             {
                 mthName = m[1] + m[2];
@@ -450,6 +450,10 @@ export class SmaliParser
 
     public getLineInfoByOffset(uri : string, mthName : string, offset : bigint) : SmaliLineInfo | undefined
     {
+        if ("" === uri)
+        {
+            return undefined;
+        }
         let mth : MethodDebugInfo | undefined = this.parseSmaliMethod(uri, mthName);
         let index : number = Number(offset);
         if (mth)
@@ -893,7 +897,7 @@ export class SmaliParser
         {
             return false;
         }
-
+//log("xxxx:" + blocks[start].name);
         let res : boolean = false;
         do
         {
@@ -908,14 +912,14 @@ export class SmaliParser
             }
 
             for (let i = 0; i < blocks[start].nextIndexs.length; i++)
-            {
+            {//log("yyyyy:" + blocks[start].nextIndexs.length);
                 res = this.isArrival(blocks, blocks[start].nextIndexs[i], stop, level + 1);
                 if (res)
                 {
                     break;
                 }
             }
-        }while(0)
+        }while(0);
 
         blocks[start].loop = res?1:2;
         return res;
@@ -1205,7 +1209,7 @@ export class SmaliParser
             }
         }
         //move
-        let m = insn.match(/^\s+(mov|move-wide|move-object)\s+([vp0-9]+),\s+([vp0-9]+)\s*/);
+        let m = insn.match(/^\s+(move|move-wide|move-object)\s+([vp0-9]+),\s+([vp0-9]+)\s*/);
         if (m)
         {
             return {
@@ -1267,7 +1271,7 @@ export class SmaliParser
         }
 
         //invoke
-        m = insn.match(/^\s+(invoke-[a-z]*)\s+[0-9$_a-zA-Z;\-><\/\{\}\[,\s]+\(.*\)([0-9a-zA-Z$\/_\[]+)\s*/);
+        m = insn.match(/^\s+(invoke-[a-z\/]*)\s+[0-9$_a-zA-Z;\-><\/\{\}\[,\s\.]+\(.*\)([0-9a-zA-Z$\/_\[;]+)\s*/);
         if (m)
         {
             return {
@@ -1392,7 +1396,7 @@ export class SmaliParser
         }
 
         //new array
-        m = insn.match(/^\s+new-array\s+([vp0-9]+),\s*[vp0-9]+,\s*(\[[\[La-zA-Z0-9$_\/]+;)\s*/);
+        m = insn.match(/^\s*new-array\s+([vp0-9]+),\s*[vp0-9]+,\s*(\[[\[La-zA-Z0-9$_\/;]+)\s*/);
         if (m)
         {
             return {
@@ -1526,7 +1530,7 @@ export class SmaliParser
             };
         }
 
-        m = insn.match(/^\s+(aget|aget-wide|aget-boolean|aget-byte|aget-char|aget-short)\s+([vp0-9]+),\s*([vp0-9]+)+.*\s*/);
+        m = insn.match(/^\s+(aget|aget-wide|aget-boolean|aget-byte|aget-char|aget-short|aget-object)\s+([vp0-9]+),\s*([vp0-9]+)+.*\s*/);
         if (m) {
             return {
                 "OpType": DexInsnType.DIT_AGET,
@@ -1580,10 +1584,13 @@ export class SmaliParser
         }
 
         //cast int-to-byte ...
-        m = insn.match(/^\s+(int|long|float|double)-to-(int|long|float|double)\s+([vp0-9]+),\s*[vp0-9]+\s*/);
+        m = insn.match(/^\s+(int|long|float|double)-to-(byte|int|long|float|double)\s+([vp0-9]+),\s*[vp0-9]+\s*/);
         if (m) {
             let type : string = 'I';
             switch (m[2]) {
+                case "byte":
+                    type = 'B';
+                    break;
                 case "int":
                     type = 'I';
                     break;
@@ -1681,7 +1688,7 @@ export class SmaliParser
         }
 
         //.catch
-        m = insn.match(/^\s*\.(catch|catchall)\b.+(:(catch|catchall)_[0-9a-b]+)\s*/);
+        m = insn.match(/^\s*\.(catch|catchall)\b.+(:(catch|catchall)_[0-9a-z]+)\s*/);
         if (m) {
             return {
                 "OpType": DexInsnType.DIT_MACOR_CATCH,
@@ -1738,6 +1745,19 @@ export class SmaliParser
             };
         }
 
+        m = insn.match(/^\s+\.line\s+[0-9]+\s*/);
+        if (m) {
+            return {
+                "OpType": DexInsnType.DIT_NONE,
+                "defReg": '',
+                "refReg": '',
+                "refType": '',
+                "size": 0,
+            };
+        }
+
+        log("getDexInsnInfo", `unparse ins:${insn}`);
+
         //default
         return {
             "OpType" : DexInsnType.DIT_NONE,
@@ -1745,7 +1765,7 @@ export class SmaliParser
             "refReg" : '',
             "refType" : '',
             "size" : 0,
-        }
+        };
     }
 
     private getSlotByName(name : string, argsIndex : number) : number
